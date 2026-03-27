@@ -1,0 +1,28 @@
+<html>
+<head>
+    <title>SV Status Monitor</title>
+    <style>
+        body { font-family: Arial; max-width: 600px; margin: 50px auto; padding: 20px; }
+        h1 { text-align: center; color: #333; }
+        h2 { color: #555; border-bottom: 1px solid #ddd; padding-bottom: 5px; }
+        .sv { padding: 12px; border-radius: 6px; margin-bottom: 8px; font-weight: bold; color: white; }
+        .healthy { background: #4CAF50; }
+        .lagging { background: #f44336; }
+    </style>
+</head>
+<body>
+    <h1>SV Status Monitor</h1>
+    <div id="app">Loading...</div>
+    <script>
+        const urls = {
+            dev: 'https://info.sv.dev.global.canton.network.sv-nodeops.com/runtime/status.json',
+            test: 'https://info.sv.test.global.canton.network.sv-nodeops.com/runtime/status.json',
+            main: 'https://info.sv.global.canton.network.sv-nodeops.com/runtime/status.json'
+        };
+        Promise.all(Object.entries(urls).map(([e,url])=>fetch(url).then(r=>r.json()).then(d=>({env:e, data:d}))))
+        .then(results => {
+            document.getElementById('app').innerHTML = results.map(r=>`<h2>${r.env}</h2>`+Object.entries(r.data.status.sv).map(([n,s])=>`<div class="sv ${s===0?'healthy':'lagging'}">${n}: ${s===0?'Healthy':'Lagging'}</div>`).join('')).join('');
+        });
+    </script>
+</body>
+</html>
