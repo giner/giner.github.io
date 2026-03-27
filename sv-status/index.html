@@ -10,7 +10,7 @@
         .env { width: 500px; margin: 0 10px; }
         .sv { display: flex; justify-content: space-between; padding: 12px; border-radius: 6px; margin-bottom: 8px; font-weight: bold; color: white; }
         .healthy { background: #4CAF50; }
-        .lagging { background: #f44336; }
+        .unhealthy { background: #f44336; }
     </style>
 </head>
 <body>
@@ -38,8 +38,8 @@
                 if (!r.ok) return `<div class="env"><h2>${r.env}</h2>No data available</div>`;
                 const svList = Object.entries(r.data.status.sv)
                     .map(([n, s]) => {
-                        const cls = s === 0 ? 'healthy' : 'lagging';
-                        const label = s === 0 ? 'Healthy' : 'Lagging';
+                        const cls = s === 0 ? 'healthy' : 'unhealthy';
+                        const label = s === 0 ? 'Healthy' : 'Not reporting';
                         return `<div class="sv ${cls}"><span>${n}</span><span>${label}</span></div>`;
                     })
                     .join('');
