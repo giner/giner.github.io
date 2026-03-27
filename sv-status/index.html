@@ -2,9 +2,12 @@
 <head>
     <title>SV Status Monitor</title>
     <style>
-        body { font-family: Arial; max-width: 600px; margin: 50px auto; padding: 20px; }
+        body { font-family: Arial; width: 100vw; padding: 20px; box-sizing: border-box; }
+        h1, h2 { padding-bottom: 5px; }
         h1 { text-align: center; color: #333; }
-        h2 { color: #555; border-bottom: 1px solid #ddd; padding-bottom: 5px; }
+        h2 { color: #555; border-bottom: 1px solid #ddd; }
+        #app { display: flex; flex-wrap: wrap; justify-content: center; }
+        .env { width: 500px; margin: 0 10px; }
         .sv { display: flex; justify-content: space-between; padding: 12px; border-radius: 6px; margin-bottom: 8px; font-weight: bold; color: white; }
         .healthy { background: #4CAF50; }
         .lagging { background: #f44336; }
@@ -43,7 +46,7 @@
                         return `<div class="sv ${cls}"><span>${n}</span><span>${label}</span></div>`;
                     })
                     .join('');
-                return `<h2>${r.env}</h2>` + svList;
+                return `<div class="env"><h2>${r.env}</h2>` + svList + `</div>`;
             }).join('');
         }
 
