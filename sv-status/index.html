@@ -3,14 +3,19 @@
     <title>SV Status Monitor</title>
     <style>
         body { font-family: Arial; width: 100vw; padding: 20px; box-sizing: border-box; }
-        h1, h2 { padding-bottom: 5px; }
-        h1 { text-align: center; color: #333; }
-        h2 { color: #555; border-bottom: 1px solid #ddd; }
-        #app { display: flex; flex-wrap: wrap; justify-content: center; }
-        .env { width: 500px; margin: 0 10px; }
-        .sv { display: flex; justify-content: space-between; padding: 12px; border-radius: 6px; margin-bottom: 8px; font-weight: bold; color: white; }
-        .healthy { background: #4CAF50; }
-        .unhealthy { background: #f44336; }
+        h1 { color: #333; }
+        h2 { color: #555; border-bottom: 1px solid #ddd; margin-top: 20px; }
+        #app { display: flex; flex-wrap: wrap; gap: 40px; justify-content: flex-start; }
+        .env { display: inline-block; vertical-align: top; }
+        table { border-collapse: collapse; margin-top: 10px; table-layout: fixed; }
+        th, td { padding: 10px; border-bottom: 1px solid #ddd; white-space: nowrap; }
+        th { text-align: center; background: #f5f5f5; font-weight: bold; }
+        td { text-align: center; }
+        th.name-col, td.name-col { width: 300px; text-align: left; }
+        th.status-col, td.status-col { width: 80px; }
+        .ok { color: #4CAF50; font-weight: bold; }
+        .bad { color: #f44336; font-weight: bold; }
+        .na { color: #999; }
     </style>
 </head>
 <body>
@@ -23,28 +28,47 @@
             main: 'https://info.sv.global.canton.network.sv-nodeops.com/runtime/status.json'
         };
 
-        async function load() {
-            const results = [];
-            for (const [env, url] of Object.entries(urls)) {
-                try {
-                    const resp = await fetch(url);
-                    const data = await resp.json();
-                    results.push({ env, data, ok: true });
-                } catch (e) {
-                    results.push({ env, ok: false });
-                }
-            }
-            document.getElementById('app').innerHTML = results.map(r => {
-                if (!r.ok) return `<div class="env"><h2>${r.env}</h2>No data available</div>`;
-                const svList = Object.entries(r.data.status.sv)
-                    .map(([n, s]) => {
-                        const cls = s === 0 ? 'healthy' : 'unhealthy';
-                        const label = s === 0 ? 'Healthy' : 'Not reporting';
-                        return `<div class="sv ${cls}"><span>${n}</span><span>${label}</span></div>`;
-                    })
-                    .join('');
-                return `<div class="env"><h2>${r.env}</h2>` + svList + `</div>`;
+        function statusLabel(s) {
+            if (s === undefined) return '<span class="na">N/A</span>';
+            return s === 0 ? '<span class="ok">OK</span>' : '<span class="bad">BAD</span>';
+        }
+
+        function renderHeader(components) {
+            const cols = components.map(c => `<th class="status-col">${c.toUpperCase()}</th>`).join('');
+            return `<tr><th class="name-col">Name</th>${cols}</tr>`;
+        }
+
+        function renderRows(svs, components, status) {
+            return svs.map(sv => {
+                const cells = components.map(c => `<td class="status-col">${statusLabel(status[c]?.[sv])}</td>`).join('');
+                return `<tr><td class="name-col">${sv}</td>${cells}</tr>`;
             }).join('');
+        }
+
+        function renderEnv({ env, status }) {
+            const components = Object.keys(status).sort();
+            const svs = [...new Set(components.flatMap(c => Object.keys(status[c])))].sort(
+                (a, b) => a.localeCompare(b, undefined, { sensitivity: 'base' })
+            );
+            const header = renderHeader(components);
+            const rows = renderRows(svs, components, status);
+            return `<div class="env"><h2>${env}</h2><table>${header}${rows}</table></div>`;
+        }
+
+        function renderError(env) {
+            return `<div class="env"><h2>${env}</h2>No data available</div>`;
+        }
+
+        async function load() {
+            const results = await Promise.all(Object.entries(urls).map(async ([env, url]) => {
+                try {
+                    const { status } = await fetch(url).then(r => r.json());
+                    return { env, status, ok: true };
+                } catch {
+                    return { env, ok: false };
+                }
+            }));
+            document.getElementById('app').innerHTML = results.map(r => r.ok ? renderEnv(r) : renderError(r.env)).join('');
         }
 
         load();
