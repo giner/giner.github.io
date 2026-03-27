@@ -29,16 +29,13 @@
                 try {
                     const resp = await fetch(url);
                     const data = await resp.json();
-                    results.push({ env, data });
+                    results.push({ env, data, ok: true });
                 } catch (e) {
-                    // ignore failed fetch
+                    results.push({ env, ok: false });
                 }
             }
-            if (results.length === 0) {
-                document.getElementById('app').innerHTML = 'No data available';
-                return;
-            }
             document.getElementById('app').innerHTML = results.map(r => {
+                if (!r.ok) return `<div class="env"><h2>${r.env}</h2>No data available</div>`;
                 const svList = Object.entries(r.data.status.sv)
                     .map(([n, s]) => {
                         const cls = s === 0 ? 'healthy' : 'lagging';
