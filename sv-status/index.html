@@ -59,6 +59,8 @@
             return `<div class="env"><h2>${env}</h2>No data available</div>`;
         }
 
+        let lastLoad = 0;
+
         async function load() {
             const results = await Promise.all(Object.entries(urls).map(async ([env, url]) => {
                 try {
@@ -69,10 +71,13 @@
                 }
             }));
             document.getElementById('app').innerHTML = results.map(r => r.ok ? renderEnv(r) : renderError(r.env)).join('');
+            lastLoad = Date.now();
         }
 
         load();
-        setInterval(load, 60000);
+        setInterval(() => {
+            if (Date.now() - lastLoad > 10000) load();
+        }, 1000);
     </script>
 </body>
 </html>
