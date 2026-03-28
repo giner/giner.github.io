@@ -1,8 +1,10 @@
 <html>
 <head>
+    <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>SV Status Monitor</title>
     <style>
-        body { font-family: Arial; width: 100vw; padding: 20px; box-sizing: border-box; }
+        body { font-family: Arial; width: 100vw; padding: 10px; box-sizing: border-box; }
+        #app { overflow-x: auto; }
         h1 { color: #333; }
         h2 { color: #555; border-bottom: 1px solid #ddd; margin-top: 20px; }
         #app { display: flex; flex-wrap: wrap; gap: 40px; justify-content: flex-start; }
@@ -11,7 +13,7 @@
         th, td { padding: 10px; border-bottom: 1px solid #ddd; white-space: nowrap; }
         th { text-align: center; background: #f5f5f5; font-weight: bold; }
         td { text-align: center; }
-        th.name-col, td.name-col { width: 300px; text-align: left; }
+        th.name-col, td.name-col { min-width: 150px; text-align: left; }
         th.status-col, td.status-col { width: 80px; }
         .ok { color: #4CAF50; font-weight: bold; }
         .bad { color: #f44336; font-weight: bold; }
