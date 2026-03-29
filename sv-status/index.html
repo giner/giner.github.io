@@ -71,11 +71,11 @@
             const results = await Promise.all(Object.entries(urls).map(fetchEnv));
             const html = results.map(r => r.ok ? renderEnv(r) : `<div class="env"><h2>${r.env}</h2>No data available</div>`).join('');
             document.getElementById('app').innerHTML = html;
+            load.last = Date.now();
         }
 
         load();
         setInterval(() => Date.now() - load.last > 10000 && load(), 1000);
-        load.last = Date.now();
     </script>
 </body>
 </html>
