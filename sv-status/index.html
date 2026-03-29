@@ -17,6 +17,7 @@
         .na { color: #999; }
         .stale-env { opacity: 0.7; }
         .stale-env h2::after { content: ' (STALE)'; color: #f44336; }
+        #debug { position: fixed; top: 0; right: 0; background: #333; color: #0f0; padding: 5px 10px; font-family: monospace; font-size: 10px; }
         @media (max-width: 600px) { body, table, th, td { font-size: 12px; } }
         @media (max-width: 800px) { body, table, th, td { font-size: 14px; } }
     </style>
@@ -24,12 +25,16 @@
 <body>
     <h1>SV Status Monitor</h1>
     <div id="app">Loading...</div>
+    <div id="debug" style="display:none;"></div>
     <script>
         const urls = {
             dev: 'https://info.sv.dev.global.canton.network.sv-nodeops.com/runtime/status.json',
             test: 'https://info.sv.test.global.canton.network.sv-nodeops.com/runtime/status.json',
             main: 'https://info.sv.global.canton.network.sv-nodeops.com/runtime/status.json',
         };
+
+        const debug = new URLSearchParams(window.location.search).get('debug') !== null;
+        const state = { lastModified: {} };
 
         async function fetchEnv([env, url]) {
             try {
@@ -38,6 +43,7 @@
                 const json = await res.json();
                 const generatedAt = json.generated_at || (lastModified && new Date(lastModified));
                 const stale = generatedAt && Date.now() - generatedAt > 90000;
+                state.lastModified[env] = lastModified;
                 return { env, status: json.status, stale, ok: true };
             } catch {
                 return { env, ok: false };
@@ -74,8 +80,25 @@
             load.last = Date.now();
         }
 
+        function updateDebug() {
+            const nextFetchIn = Math.max(0, 10 - (Date.now() - load.last) / 1000);
+            const lines = [
+                `Screen width: ${window.innerWidth}px`,
+                `Last modified: ${JSON.stringify(state.lastModified)}`,
+                `Data updated: ${new Date(load.last).toISOString()}`,
+                `Next fetch in: ${nextFetchIn.toFixed(1)}s`
+            ];
+            document.getElementById('debug').innerHTML = lines.join('<br>');
+        }
+
         load();
         setInterval(() => Date.now() - load.last > 10000 && load(), 1000);
+
+        if (debug) {
+            document.getElementById('debug').style.display = 'block';
+            setInterval(updateDebug, 100);
+            updateDebug();
+        }
     </script>
 </body>
 </html>
