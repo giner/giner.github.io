@@ -73,10 +73,9 @@
             const cols = components.map(c => `<th>${c.toUpperCase()}</th>`).join('');
             const rows = results.map(r => {
                 if (!r.ok) return `<tr><td class="name-col">${r.env}</td><td colspan="${components.length}">No data</td></tr>`;
+                const total = [...new Set(components.flatMap(c => Object.keys(r.status[c] || {})))].length;
                 const cells = components.map(c => {
-                    const svs = Object.keys(r.status[c] || {});
-                    const available = svs.filter(sv => r.status[c][sv] === 0).length;
-                    const total = svs.length;
+                    const available = [...new Set(Object.keys(r.status[c] || {}))].filter(sv => r.status[c]?.[sv] === 0).length;
                     const cls = available === total ? 'ok' : available > 0 ? 'bad' : 'na';
                     return `<td class="${cls}">${available}/${total}</td>`;
                 }).join('');
