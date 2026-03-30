@@ -3,7 +3,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>SV Status Monitor</title>
     <style>
-        body { font-family: Arial; padding: 10px; }
+        body { font-family: Arial; padding: 10px; font-size: clamp(12px, 2vw, 16px); }
         #app { display: flex; flex-wrap: wrap; gap: 40px; overflow-x: auto; }
         h1 { color: #333; }
         h2 { color: #555; border-bottom: 1px solid #ddd; margin-top: 20px; }
@@ -18,7 +18,7 @@
         .stale-env { opacity: 0.7; }
         .stale-env h2::after { content: ' (STALE)'; color: #f44336; }
         #debug { position: fixed; top: 0; right: 0; background: #333; color: #0f0; padding: 5px 10px; font-family: monospace; font-size: 10px; }
-        body, table, th, td { font-size: clamp(12px, 2vw, 16px); padding: clamp(5px, 1vw, 10px); }
+        table, th, td { padding: clamp(5px, 1vw, 10px); }
     </style>
 </head>
 <body>
@@ -33,6 +33,8 @@
         };
 
         const debug = new URLSearchParams(window.location.search).get('debug') !== null;
+        const STALE_THRESHOLD = 90;
+        const POLL_INTERVAL = 10;
         const state = { lastModified: {} };
 
         async function fetchEnv([env, url]) {
@@ -41,8 +43,8 @@
                 const lastModified = res.headers.get('last-modified');
                 const json = await res.json();
                 const generatedAt = json.generated_at || (lastModified && new Date(lastModified));
-                const stale = generatedAt && Date.now() - generatedAt > 90000;
-                state.lastModified[env] = lastModified;
+                const stale = generatedAt && Date.now() - generatedAt > STALE_THRESHOLD * 1000;
+                if (debug) state.lastModified[env] = lastModified && new Date(lastModified).toISOString();
                 return { env, status: json.status, stale, ok: true };
             } catch {
                 return { env, ok: false };
@@ -54,8 +56,8 @@
             const rows = svs.map(sv => {
                 const cells = components.map(c => {
                     const v = status[c]?.[sv];
-                    const cls = v === 0 ? 'ok' : v === undefined ? 'na' : 'bad';
-                    const label = v === 0 ? 'OK' : v === undefined ? 'N/A' : 'BAD';
+                    const cls = v === 0 ? 'ok' : v ? 'bad' : 'na';
+                    const label = v === 0 ? 'OK' : v ? 'BAD' : 'N/A';
                     return `<td><span class="${cls}">${label}</span></td>`;
                 }).join('');
                 return `<tr><td class="name-col">${sv}</td>${cells}</tr>`;
@@ -80,7 +82,7 @@
         }
 
         function updateDebug() {
-            const nextFetchIn = Math.max(0, 10 - (Date.now() - load.last) / 1000);
+            const nextFetchIn = Math.max(0, POLL_INTERVAL - (Date.now() - load.last) / 1000);
             const lines = [
                 `Screen width: ${window.innerWidth}px`,
                 `Last modified: ${JSON.stringify(state.lastModified)}`,
@@ -91,7 +93,7 @@
         }
 
         load();
-        setInterval(() => Date.now() - load.last > 10000 && load(), 1000);
+        setInterval(() => Date.now() - load.last > POLL_INTERVAL * 1000 && load(), 1000);
 
         if (debug) {
             document.getElementById('debug').style.display = 'block';
