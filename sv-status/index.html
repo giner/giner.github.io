@@ -17,12 +17,15 @@
         .na { color: #999; }
         .stale-env { opacity: 0.7; }
         .stale-env h2::after { content: ' (STALE)'; color: #f44336; }
+        #summary { margin-bottom: 20px; overflow-x: auto; }
+        .summary-table { margin-top: 0; }
         #debug { position: fixed; top: 0; right: 0; background: #333; color: #0f0; padding: 5px 10px; font-family: monospace; font-size: 10px; }
         table, th, td { padding: clamp(5px, 1vw, 10px); }
     </style>
 </head>
 <body>
     <h1>SV Status Monitor</h1>
+    <div id="summary"></div>
     <div id="app">Loading...</div>
     <div id="debug" style="display:none;"></div>
     <script>
@@ -65,6 +68,23 @@
             return `<table><tr><th class="name-col">Name</th>${cols}</tr>${rows}</table>`;
         }
 
+        function renderSummary(results) {
+            const components = [...new Set(results.filter(r => r.ok).flatMap(r => Object.keys(r.status)))].sort();
+            const cols = components.map(c => `<th>${c.toUpperCase()}</th>`).join('');
+            const rows = results.map(r => {
+                if (!r.ok) return `<tr><td class="name-col">${r.env}</td><td colspan="${components.length}">No data</td></tr>`;
+                const cells = components.map(c => {
+                    const svs = Object.keys(r.status[c] || {});
+                    const available = svs.filter(sv => r.status[c][sv] === 0).length;
+                    const total = svs.length;
+                    const cls = available === total ? 'ok' : available > 0 ? 'bad' : 'na';
+                    return `<td class="${cls}">${available}/${total}</td>`;
+                }).join('');
+                return `<tr><td class="name-col">${r.env}</td>${cells}</tr>`;
+            }).join('');
+            return `<table class="summary-table"><tr><th class="name-col">Env</th>${cols}</tr>${rows}</table>`;
+        }
+
         function renderEnv({ env, status, stale }) {
             const components = Object.keys(status).sort();
             const svs = [...new Set(components.flatMap(c => Object.keys(status[c])))].sort(
@@ -76,8 +96,8 @@
 
         async function load() {
             const results = await Promise.all(Object.entries(urls).map(fetchEnv));
-            const html = results.map(r => r.ok ? renderEnv(r) : `<div class="env"><h2>${r.env}</h2>No data available</div>`).join('');
-            document.getElementById('app').innerHTML = html;
+            document.getElementById('summary').innerHTML = renderSummary(results);
+            document.getElementById('app').innerHTML = results.map(r => r.ok ? renderEnv(r) : `<div class="env"><h2>${r.env}</h2>No data available</div>`).join('');
             load.last = Date.now();
         }
 
