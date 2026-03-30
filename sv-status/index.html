@@ -102,6 +102,7 @@
             document.getElementById('summary').innerHTML = renderSummary(results);
             document.getElementById('app').innerHTML = results.map(r => r.ok ? renderEnv(r) : `<div class="env"><h2>${r.env}</h2>No data available</div>`).join('');
             load.last = Date.now();
+            refresh.textContent = 'Refreshed...';
             setTimeout(() => refresh.textContent = '', 500);
         }
 
