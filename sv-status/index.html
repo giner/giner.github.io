@@ -112,7 +112,8 @@
                 `Screen width: ${window.innerWidth}px`,
                 `Last modified: ${JSON.stringify(state.lastModified)}`,
                 `Data updated: ${new Date(load.last).toISOString()}`,
-                `Next fetch in: ${nextFetchIn.toFixed(1)}s`
+                `Current time: ${new Date().toISOString()}`,
+                `Next fetch in: ${nextFetchIn.toFixed(1)}s`,
             ];
             document.getElementById('debug').innerHTML = lines.join('<br>');
         }
