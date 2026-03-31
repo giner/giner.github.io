@@ -99,6 +99,14 @@
             const refresh = document.getElementById('refresh');
             refresh.textContent = 'Refreshing...';
             const results = await Promise.all(Object.entries(urls).map(fetchEnv));
+
+            // Retry fetching stale environments immediately, this forces
+            // mobile browsers to revalidate the cache immediately on reopening
+            // the browser
+            await Promise.all(results
+                .filter(r => r.ok && r.stale)
+                .map(r => fetchEnv([r.env, urls[r.env]]).then(newR => Object.assign(r, newR))));
+
             document.getElementById('summary').innerHTML = renderSummary(results);
             document.getElementById('app').innerHTML = results.map(r => r.ok ? renderEnv(r) : `<div class="env"><h2>${r.env}</h2>No data available</div>`).join('');
             load.last = Date.now();
