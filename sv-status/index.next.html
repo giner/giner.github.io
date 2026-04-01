@@ -1,0 +1,289 @@
+<html>
+<head>
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>SV Status Monitor</title>
+    <style>
+        body { font-family: Arial; font-size: clamp(12px, 2vw, 16px); margin-top: 30px; }
+        #app { display: flex; flex-wrap: wrap; column-gap: 40px; row-gap: 10px; overflow-x: auto; }
+        h1 { color: #333; }
+        h2 { color: #555; border-bottom: 1px solid #ddd; margin-top: 20px; }
+        .env { display: inline-block; vertical-align: top; }
+        table { border-collapse: collapse; margin-top: 10px; }
+        th, td { padding: 10px; border-bottom: 1px solid #ddd; white-space: nowrap; text-align: center; font-size: clamp(12px, 2vw, 16px); }
+        th { background: #f3f3f3; font-weight: bold; }
+        .name-col { min-width: 150px; text-align: left; }
+        .ok { color: #4CAF50; font-weight: bold; }
+        .bad { color: #f44336; font-weight: bold; }
+        .na { color: #999; }
+        .stale-env { opacity: 0.7; }
+        .stale-env h2::after { content: ' (stale)'; color: #f44336; }
+        #refresh { display: block; position: fixed; top: 10px; right: 10px; font-size: 14px; color: #333; z-index: 1000; }
+        #summary { margin-bottom: 20px; overflow-x: auto; }
+        .summary-table { margin-top: 0; }
+        #debug { position: fixed; top: 0; right: 0; background: #333; color: #0f0; padding: 5px 10px; font-family: monospace; font-size: 10px; max-width: 90vw; }
+        table, th, td { padding: clamp(5px, 1vw, 10px); }
+        .notify-on { background: #C8E6C9 !important; }
+    </style>
+</head>
+<body>
+    <div id="refresh"></div>
+    <h1>SV Status Monitor</h1>
+    <div id="summary"></div>
+    <div id="app">Loading...</div>
+    <div id="debug" style="display:none;"></div>
+    <script>
+        const urls = {
+            dev: 'https://info.sv.dev.global.canton.network.sv-nodeops.com/runtime/status.json',
+            test: 'https://info.sv.test.global.canton.network.sv-nodeops.com/runtime/status.json',
+            main: 'https://info.sv.global.canton.network.sv-nodeops.com/runtime/status.json',
+        };
+
+        const debug = new URLSearchParams(window.location.search).has('debug');
+        const STALE_THRESHOLD = 90;
+        const POLL_INTERVAL = 10;
+        const state = { lastModified: {}, notify: {} };
+
+        // Load notify settings
+        try {
+            state.notify = JSON.parse(localStorage.getItem('notify') || '{}');
+        } catch {}
+
+        function getStatus(status, components, svs) {
+            let bad = 0, ok = 0;
+            for (const sv of svs) {
+                for (const c of components) {
+                    const v = status[c]?.[sv];
+                    if (v === 0) ok++;
+                    else if (v) bad++;
+                }
+            }
+            return bad > 0 ? 'bad' : ok > 0 ? 'ok' : 'na';
+        }
+
+        function handleNodeClick(event, nodeName) {
+            if (event.ctrlKey || event.metaKey) {
+                toggleNotify('node:' + nodeName);
+                event.preventDefault();
+            }
+        }
+
+        function toggleNotify(key) {
+            if ('Notification' in window && Notification.permission === 'default') {
+                Notification.requestPermission();
+            }
+            state.notify[key] = !state.notify[key];
+            localStorage.setItem('notify', JSON.stringify(state.notify));
+            document.getElementById('summary').innerHTML = renderSummary(state.lastResults || []);
+            document.getElementById('app').innerHTML = (state.lastResults || []).map(r => r.ok ? renderEnv(r) : `<div class="env"><h2>${r.env}</h2>No data available</div>`).join('');
+        }
+
+        function checkNotifications(results, prevResults) {
+            if (!('Notification' in window) || Notification.permission !== 'granted') return;
+            if (!prevResults) return;
+
+            const notify = (title, body) => {
+                new Notification(title, { body });
+            };
+
+            // ENV notifications: alerts enabled per env (from summary table)
+            for (const r of results) {
+                if (!r.ok) continue;
+                const envKey = `env:${r.env}`;
+                if (!state.notify[envKey]) continue;
+
+                const prevR = prevResults.find(pr => pr.env === r.env);
+                if (!prevR?.ok) continue;
+
+                const components = Object.keys(r.status);
+                const prevComponents = Object.keys(prevR.status);
+
+                // Get union of all nodes across all services in this env
+                const allNodes = [...new Set(components.flatMap(c => Object.keys(r.status[c] || {})))];
+                const prevAllNodes = [...new Set(prevComponents.flatMap(c => Object.keys(prevR.status[c] || {})))];
+                const expectedCount = allNodes.length;
+
+                for (const component of components) {
+                    const nodes = r.status[component] || {};
+                    const healthy = allNodes.filter(node => nodes[node] === 0).length;
+                    const currIsHealthy = healthy === expectedCount;
+
+                    const prevNodes = prevR.status[component] || {};
+                    const prevAllNodesForEnv = [...new Set(prevComponents.flatMap(c => Object.keys(prevR.status[c] || {})))];
+                    const prevExpectedCount = prevAllNodesForEnv.length;
+                    const prevHealthy = prevAllNodesForEnv.filter(node => prevNodes[node] === 0).length;
+                    const prevIsHealthy = prevHealthy === prevExpectedCount;
+
+                    // Check if this is a new service
+                    const isNewService = !prevR.status[component];
+
+                    if (isNewService) {
+                        // New service added - alert only if unhealthy
+                        if (!currIsHealthy) {
+                            notify('SV Status', `Service ${r.env}/${component} is not healthy (missing some nodes)`);
+                        }
+                    } else if (currIsHealthy !== prevIsHealthy) {
+                        // State changed
+                        if (currIsHealthy) {
+                            notify('SV Status', `Service ${r.env}/${component} is healthy (has all nodes)`);
+                        } else {
+                            notify('SV Status', `Service ${r.env}/${component} is not healthy (missing some nodes)`);
+                        }
+                    }
+                }
+            }
+
+            // Node notifications: alerts enabled per node (from detail tables)
+            for (const r of results) {
+                if (!r.ok) continue;
+
+                const prevR = prevResults.find(pr => pr.env === r.env);
+                if (!prevR?.ok) continue;
+
+                const components = Object.keys(r.status);
+                const allServices = [...new Set(components)];
+                const prevComponents = Object.keys(prevR.status);
+                const prevAllServices = [...new Set(prevComponents)];
+
+                const allNodes = [...new Set(components.flatMap(c => Object.keys(r.status[c] || {})))];
+                const prevAllNodes = [...new Set(prevComponents.flatMap(c => Object.keys(prevR.status[c] || {})))];
+
+                for (const node of allNodes) {
+                    const nodeKey = `node:${node}`;
+                    const envNodeKey = `node:${r.env}:${node}`;
+                    if (!state.notify[nodeKey] && !state.notify[envNodeKey]) continue;
+
+                    const expectedServices = allServices.length;
+                    const currHealthy = allServices.filter(c => r.status[c]?.[node] === 0).length;
+                    const currIsHealthy = currHealthy === expectedServices;
+
+                    // Node is new to this env
+                    if (!prevAllNodes.includes(node)) {
+                        if (!currIsHealthy) {
+                            notify('SV Status', `Node ${r.env}/${node} is unhealthy (missing some services)`);
+                        }
+                        continue;
+                    }
+
+                    // Existing node - check state change
+                    const prevExpectedServices = prevAllServices.length;
+                    const prevHealthy = prevAllServices.filter(c => prevR.status[c]?.[node] === 0).length;
+                    const prevIsHealthy = prevHealthy === prevExpectedServices;
+
+                    if (currIsHealthy !== prevIsHealthy) {
+                        if (currIsHealthy) {
+                            notify('SV Status', `Node ${r.env}/${node} is healthy (has all services)`);
+                        } else {
+                            notify('SV Status', `Node ${r.env}/${node} is unhealthy (missing some services)`);
+                        }
+                    }
+                }
+            }
+        }
+
+        async function fetchEnv([env, url]) {
+            try {
+                const res = await fetch(url);
+                const lastModified = res.headers.get('last-modified');
+                const json = await res.json();
+                const generatedAt = json.generated_at || (lastModified && new Date(lastModified));
+                const stale = generatedAt && Date.now() - generatedAt > STALE_THRESHOLD * 1000;
+                if (debug) state.lastModified[env] = lastModified && new Date(lastModified).toISOString();
+                return { env, status: json.status, stale, ok: true };
+            } catch {
+                return { env, ok: false };
+            }
+        }
+
+        function renderTable(components, nodes, status, env) {
+            const cols = components.map(c => `<th>${c.toUpperCase()}</th>`).join('');
+            const rows = nodes.map(node => {
+                const cells = components.map(c => {
+                    const v = status[c]?.[node];
+                    const cls = v === 0 ? 'ok' : v ? 'bad' : 'na';
+                    const label = v === 0 ? 'OK' : v ? 'BAD' : 'N/A';
+                    return `<td><span class="${cls}">${label}</span></td>`;
+                }).join('');
+                const notifyClass = (state.notify[`node:${node}`] || state.notify[`node:${env}:${node}`]) ? ' notify-on' : '';
+                return `<tr><td class="name-col${notifyClass}" onclick="handleNodeClick(event, '${node}')" title="Ctrl+Click to enable alerts">${node}</td>${cells}</tr>`;
+            }).join('');
+            return `<table><tr><th class="name-col">Name</th>${cols}</tr>${rows}</table>`;
+        }
+
+        function renderSummary(results) {
+            const components = [...new Set(results.filter(r => r.ok).flatMap(r => Object.keys(r.status)))].sort();
+            const cols = components.map(c => `<th>${c.toUpperCase()}</th>`).join('');
+            const rows = results.map(r => {
+                if (!r.ok) return `<tr><td class="name-col">${r.env}</td><td colspan="${components.length}">No data</td></tr>`;
+                const allNodes = [...new Set(components.flatMap(c => Object.keys(r.status[c] || {})))];
+                const total = allNodes.length;
+                const cells = components.map(c => {
+                    const nodes = r.status[c] || {};
+                    const available = allNodes.filter(node => nodes[node] === 0).length;
+                    const cls = available === total ? 'ok' : available > 0 ? 'bad' : 'na';
+                    return `<td class="${cls}">${available}/${total}</td>`;
+                }).join('');
+                const notifyClass = state.notify[`env:${r.env}`] ? ' clickable notify-on' : ' clickable';
+                return `<tr><td class="name-col${notifyClass}" onclick="toggleNotify('env:${r.env}')" style="cursor:pointer" title="Click to enable alerts for this env">${r.env}</td>${cells}</tr>`;
+            }).join('');
+            return `<table class="summary-table"><tr><th class="name-col">Env</th>${cols}</tr>${rows}</table>`;
+        }
+
+        function renderEnv({ env, status, stale }) {
+            const components = Object.keys(status).sort();
+            const svs = [...new Set(components.flatMap(c => Object.keys(status[c])))].sort(
+                (a, b) => a.localeCompare(b, undefined, { sensitivity: 'base' })
+            );
+            const cls = stale ? ' stale-env' : '';
+            return `<div class="env${cls}"><h2>${env}</h2>${renderTable(components, svs, status, env)}</div>`;
+        }
+
+        async function load() {
+            if ('Notification' in window && Notification.permission === 'default') {
+                await Notification.requestPermission();
+            }
+            const refresh = document.getElementById('refresh');
+            refresh.textContent = 'Refreshing...';
+
+            const prevResults = state.lastResults;
+            const results = await Promise.all(Object.entries(urls).map(fetchEnv));
+
+            // Retry fetching stale environments immediately, this forces
+            // mobile browsers to revalidate the cache immediately on reopening
+            // the browser
+            await Promise.all(results
+                .filter(r => r.ok && r.stale)
+                .map(r => fetchEnv([r.env, urls[r.env]]).then(newR => Object.assign(r, newR))));
+
+            checkNotifications(results, prevResults);
+            state.lastResults = results;
+
+            document.getElementById('summary').innerHTML = renderSummary(results);
+            document.getElementById('app').innerHTML = results.map(r => r.ok ? renderEnv(r) : `<div class="env"><h2>${r.env}</h2>No data available</div>`).join('');
+            load.last = Date.now();
+            refresh.textContent = 'Refreshed...';
+            setTimeout(() => refresh.textContent = `Last refreshed: ${new Date(load.last).toLocaleTimeString()}`, 500);
+        }
+
+        function updateDebug() {
+            const nextFetchIn = Math.max(0, POLL_INTERVAL - (Date.now() - load.last) / 1000);
+            const lines = [
+                `Screen width: ${window.innerWidth}px`,
+                `Last modified: ${JSON.stringify(state.lastModified)}`,
+                `Data updated: ${new Date(load.last).toISOString()}`,
+                `Current time: ${new Date().toISOString()}`,
+                `Next fetch in: ${nextFetchIn.toFixed(1)}s`,
+            ];
+            document.getElementById('debug').innerHTML = lines.join('<br>');
+        }
+
+        load();
+        setInterval(() => Date.now() - load.last > POLL_INTERVAL * 1000 && load(), 1000);
+
+        if (debug) {
+            document.getElementById('debug').style.display = 'block';
+            setInterval(updateDebug, 100);
+            updateDebug();
+        }
+    </script>
+</body>
+</html>
