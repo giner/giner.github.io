@@ -88,7 +88,7 @@
 
         function renderEnv({ env, status, stale }) {
             const components = Object.keys(status).sort();
-            const svs = [...new Set(components.flatMap(c => Object.keys(status[c])))].sort(
+            const svs = [...new Set(components.flatMap(c => Object.keys(status[c] || {})))].sort(
                 (a, b) => a.localeCompare(b, undefined, { sensitivity: 'base' })
             );
             const cls = stale ? ' stale-env' : '';
