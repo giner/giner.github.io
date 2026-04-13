@@ -56,17 +56,38 @@
             }
         }
 
+        function getEnvStatus(sourceData, env) {
+            return sourceData[env]?.status;
+        }
+
+        function isEnvFetched(sourceData, env) {
+            return sourceData[env]?.ok;
+        }
+
+        function isEnvFresh(sourceData, env) {
+            return !sourceData[env]?.stale;
+        }
+
+        function getComponentNodes(status, component) {
+            return status[component];
+        }
+
+        function isComponentPresent(status, component) {
+            return status && status[component] && typeof status[component] === 'object';
+        }
+
         function toEnvNodeComponentStatus(sourceData) {
             const data = {};
-            for (const [env, r] of Object.entries(sourceData)) {
-                if (!r.ok) { data[env] = null; continue; }
-                const components = Object.keys(r.status).filter(c => r.status[c] && typeof r.status[c] === 'object');
-                const nodes = [...new Set(components.flatMap(c => Object.keys(r.status[c])))];
+            for (const [env] of Object.entries(sourceData)) {
+                if (!isEnvFetched(sourceData, env)) { data[env] = null; continue; }
+                const status = getEnvStatus(sourceData, env);
+                const components = Object.keys(status).filter(c => isComponentPresent(status, c));
+                const nodes = [...new Set(components.flatMap(c => Object.keys(getComponentNodes(status, c))))];
                 data[env] = {};
                 for (const node of nodes) {
                     data[env][node] = {};
                     for (const c of components) {
-                        const v = r.status[c][node];
+                        const v = getComponentNodes(status, c)[node];
                         data[env][node][c] = (v === 0 || v === 1) ? v : -1;
                     }
                 }
@@ -87,8 +108,9 @@
                     continue;
                 }
                 data[env] = {};
+                const status = getEnvStatus(sourceData, env);
                 for (const c of allComponents) {
-                    if (!sourceData[env]?.status[c]) {
+                    if (!isComponentPresent(status, c)) {
                         data[env][c] = -1;
                     } else {
                         let available = 0;
@@ -178,7 +200,7 @@
             // mobile browsers to revalidate the cache immediately on reopening
             // the browser
             await Promise.all(Object.entries(results)
-                .filter(([, r]) => r.ok && r.stale)
+                .filter(([env]) => isEnvFetched(results, env) && !isEnvFresh(results, env))
                 .map(([env, r]) => fetchEnv([env, urls[env]]).then(([, newR]) => Object.assign(r, newR))));
 
             const envNodeComponentStatus = toEnvNodeComponentStatus(results);
@@ -186,7 +208,7 @@
 
             document.getElementById('summary').replaceChildren(renderSummary(envComponentStatus, envNodeComponentStatus));
             document.getElementById('app').replaceChildren(
-                ...Object.entries(results).map(([env, r]) => renderEnv(env, envNodeComponentStatus[env], r.stale))
+                ...Object.entries(results).map(([env, r]) => renderEnv(env, envNodeComponentStatus[env], !isEnvFresh(results, env)))
             );
             load.last = Date.now();
             refresh.textContent = 'Refreshed...';
