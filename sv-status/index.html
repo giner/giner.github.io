@@ -32,9 +32,18 @@
     <div id="debug" style="display:none;"></div>
     <script>
         const urls = {
-            dev: 'https://info.sv.dev.global.canton.network.sv-nodeops.com/runtime/status.json',
-            test: 'https://info.sv.test.global.canton.network.sv-nodeops.com/runtime/status.json',
-            main: 'https://info.sv.global.canton.network.sv-nodeops.com/runtime/status.json',
+            dev: [
+                'https://info.sv.dev.global.canton.network.sv-nodeops.com/runtime/status.v2.json',
+                'https://info.sv.dev.global.canton.network.sv-nodeops.com/runtime/status.json',
+            ],
+            test: [
+                'https://info.sv.test.global.canton.network.sv-nodeops.com/runtime/status.v2.json',
+                'https://info.sv.test.global.canton.network.sv-nodeops.com/runtime/status.json',
+            ],
+            main: [
+                'https://info.sv.global.canton.network.sv-nodeops.com/runtime/status.v2.json',
+                'https://info.sv.global.canton.network.sv-nodeops.com/runtime/status.json',
+            ],
         };
 
         const debug = new URLSearchParams(window.location.search).has('debug');
@@ -57,7 +66,12 @@
         }
 
         function getComponentNodes(status, component) {
-            return status[component];
+            const comp = status[component];
+            return comp.nodes ?? comp;
+        }
+
+        function getComponentDescription(status, component) {
+            return status[component]?.description;
         }
 
         function isComponentPresent(status, component) {
@@ -76,6 +90,21 @@
 
         function getStatusLabel(status) {
             return status === 0 ? 'OK' : status === 1 ? 'BAD' : 'N/A';
+        }
+
+        function toEnvComponentDescription(sourceData) {
+            const descriptions = {};
+            for (const [env] of Object.entries(sourceData)) {
+                if (!isEnvFetched(sourceData, env)) continue;
+                const status = getEnvStatus(sourceData, env);
+                descriptions[env] = {};
+                for (const c of Object.keys(status)) {
+                    if (isComponentPresent(status, c)) {
+                        descriptions[env][c] = getComponentDescription(status, c);
+                    }
+                }
+            }
+            return descriptions;
         }
 
         // === TRANSFORMATION ===
@@ -134,12 +163,12 @@
             return e;
         }
 
-        function renderEnvTable(nodes) {
+        function renderEnvTable(nodes, componentDescription) {
             const components = getAllComponents(nodes);
             const nodeNames = Object.keys(nodes).sort((a, b) => a.localeCompare(b, undefined, { sensitivity: 'base' }));
             const thead = el('tr', {}, [
                 el('th', { class: 'name-col' }, ['Name']),
-                ...components.map(c => el('th', {}, [c.toUpperCase()]))
+                ...components.map(c => el('th', { title: componentDescription?.[c] }, [c.toUpperCase()]))
             ]);
             const rows = nodeNames.map(node => {
                 const cells = components.map(c => {
@@ -151,7 +180,7 @@
             return el('table', {}, [thead, ...rows]);
         }
 
-        function renderEnv(envName, nodes, stale) {
+        function renderEnv(envName, nodes, stale, componentDescription) {
             if (!nodes) {
                 return el('div', { class: 'env' }, [
                     el('h2', {}, [envName]),
@@ -160,7 +189,7 @@
             }
             return el('div', { class: stale ? 'env stale-env' : 'env' }, [
                 el('h2', {}, [envName]),
-                renderEnvTable(nodes)
+                renderEnvTable(nodes, componentDescription)
             ]);
         }
 
@@ -190,18 +219,27 @@
 
         // === FETCHING ===
 
-        async function fetchEnv([env, url]) {
-            try {
+        async function fetchEnv([env, urlList]) {
+            const tryFetch = async (url) => {
                 const res = await fetch(url);
+                if (!res.ok) throw new Error(`HTTP ${res.status}`);
                 const lastModified = res.headers.get('last-modified');
                 const json = await res.json();
                 const generatedAt = json.generated_at || (lastModified && new Date(lastModified));
                 const stale = generatedAt && Date.now() - generatedAt > STALE_THRESHOLD * 1000;
                 if (debug) state.lastModified[env] = lastModified && new Date(lastModified).toISOString();
-                return [env, { status: json.status, stale, ok: true }];
-            } catch {
-                return [env, { ok: false }];
+                return { status: json.status, stale };
+            };
+
+            for (const url of urlList) {
+                try {
+                    const result = await tryFetch(url);
+                    return [env, { ...result, ok: true }];
+                } catch {
+                    continue;
+                }
             }
+            return [env, { ok: false }];
         }
 
         async function load() {
@@ -220,11 +258,12 @@
 
             const envNodeComponentStatus = toEnvNodeComponentStatus(sourceData);
             const envComponentStatus = toEnvComponentOKCount(envNodeComponentStatus, sourceData);
+            const envComponentDescription = toEnvComponentDescription(sourceData);
 
             document.getElementById('summary').replaceChildren(renderSummary(envComponentStatus, envNodeComponentStatus));
             document.getElementById('app').replaceChildren(
                 ...Object.entries(sourceData).map(([env]) =>
-                    renderEnv(env, envNodeComponentStatus[env], isEnvStale(sourceData, env)))
+                    renderEnv(env, envNodeComponentStatus[env], isEnvStale(sourceData, env), envComponentDescription[env]))
             );
             load.last = Date.now();
             refresh.textContent = 'Refreshed...';
