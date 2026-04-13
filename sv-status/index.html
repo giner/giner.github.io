@@ -42,19 +42,7 @@
         const POLL_INTERVAL = 10;
         const state = { lastModified: {} };
 
-        async function fetchEnv([env, url]) {
-            try {
-                const res = await fetch(url);
-                const lastModified = res.headers.get('last-modified');
-                const json = await res.json();
-                const generatedAt = json.generated_at || (lastModified && new Date(lastModified));
-                const stale = generatedAt && Date.now() - generatedAt > STALE_THRESHOLD * 1000;
-                if (debug) state.lastModified[env] = lastModified && new Date(lastModified).toISOString();
-                return [env, { status: json.status, stale, ok: true }];
-            } catch {
-                return [env, { ok: false }];
-            }
-        }
+        // === DATA ACCESS ===
 
         function getEnvStatus(sourceData, env) {
             return sourceData[env]?.status;
@@ -64,8 +52,8 @@
             return sourceData[env]?.ok;
         }
 
-        function isEnvFresh(sourceData, env) {
-            return !sourceData[env]?.stale;
+        function isEnvStale(sourceData, env) {
+            return sourceData[env]?.stale;
         }
 
         function getComponentNodes(status, component) {
@@ -75,6 +63,22 @@
         function isComponentPresent(status, component) {
             return status && status[component] && typeof status[component] === 'object';
         }
+
+        function getAllComponents(data) {
+            return [...new Set(
+                Object.values(data).filter(d => d).flatMap(d => Object.keys(d))
+            )].sort();
+        }
+
+        function getStatusClass(status) {
+            return status === 0 ? 'ok' : status === 1 ? 'bad' : 'na';
+        }
+
+        function getStatusLabel(status) {
+            return status === 0 ? 'OK' : status === 1 ? 'BAD' : 'N/A';
+        }
+
+        // === TRANSFORMATION ===
 
         function toEnvNodeComponentStatus(sourceData) {
             const data = {};
@@ -103,10 +107,7 @@
             );
             const data = {};
             for (const [env, nodes] of Object.entries(envNodeComponentStatus)) {
-                if (!nodes) {
-                    data[env] = null;
-                    continue;
-                }
+                if (!nodes) { data[env] = null; continue; }
                 data[env] = {};
                 const status = getEnvStatus(sourceData, env);
                 for (const c of allComponents) {
@@ -124,6 +125,8 @@
             return data;
         }
 
+        // === RENDERING ===
+
         function el(tag, attrs = {}, children = []) {
             const e = document.createElement(tag);
             Object.entries(attrs).forEach(([k, v]) => e.setAttribute(k, v));
@@ -132,7 +135,7 @@
         }
 
         function renderEnvTable(nodes) {
-            const components = [...new Set(Object.values(nodes).flatMap(n => Object.keys(n)))].sort();
+            const components = getAllComponents(nodes);
             const nodeNames = Object.keys(nodes).sort((a, b) => a.localeCompare(b, undefined, { sensitivity: 'base' }));
             const thead = el('tr', {}, [
                 el('th', { class: 'name-col' }, ['Name']),
@@ -141,9 +144,7 @@
             const rows = nodeNames.map(node => {
                 const cells = components.map(c => {
                     const v = nodes[node][c];
-                    const cls = v === 0 ? 'ok' : v === 1 ? 'bad' : 'na';
-                    const label = v === 0 ? 'OK' : v === 1 ? 'BAD' : 'N/A';
-                    return el('td', {}, [el('span', { class: cls }, [label])]);
+                    return el('td', {}, [el('span', { class: getStatusClass(v) }, [getStatusLabel(v)])]);
                 });
                 return el('tr', {}, [el('td', { class: 'name-col' }, [node]), ...cells]);
             });
@@ -164,9 +165,7 @@
         }
 
         function renderSummary(envComponentStatus, envNodeComponentStatus) {
-            const components = [...new Set(
-                Object.values(envComponentStatus).filter(envData => envData).flatMap(envData => Object.keys(envData))
-            )].sort();
+            const components = getAllComponents(envComponentStatus);
             const thead = el('tr', {}, [
                 el('th', { class: 'name-col' }, ['Env']),
                 ...components.map(c => el('th', {}, [c.toUpperCase()]))
@@ -189,26 +188,43 @@
             return el('table', { class: 'summary-table' }, [thead, ...rows]);
         }
 
+        // === FETCHING ===
+
+        async function fetchEnv([env, url]) {
+            try {
+                const res = await fetch(url);
+                const lastModified = res.headers.get('last-modified');
+                const json = await res.json();
+                const generatedAt = json.generated_at || (lastModified && new Date(lastModified));
+                const stale = generatedAt && Date.now() - generatedAt > STALE_THRESHOLD * 1000;
+                if (debug) state.lastModified[env] = lastModified && new Date(lastModified).toISOString();
+                return [env, { status: json.status, stale, ok: true }];
+            } catch {
+                return [env, { ok: false }];
+            }
+        }
+
         async function load() {
             const refresh = document.getElementById('refresh');
             refresh.textContent = 'Refreshing...';
-            const results = Object.fromEntries(
+            const sourceData = Object.fromEntries(
                 await Promise.all(Object.entries(urls).map(fetchEnv))
             );
 
             // Retry fetching stale environments immediately, this forces
             // mobile browsers to revalidate the cache immediately on reopening
             // the browser
-            await Promise.all(Object.entries(results)
-                .filter(([env]) => isEnvFetched(results, env) && !isEnvFresh(results, env))
-                .map(([env, r]) => fetchEnv([env, urls[env]]).then(([, newR]) => Object.assign(r, newR))));
+            await Promise.all(Object.entries(sourceData)
+                .filter(([env]) => isEnvFetched(sourceData, env) && isEnvStale(sourceData, env))
+                .map(([env]) => fetchEnv([env, urls[env]]).then(([, newData]) => Object.assign(sourceData[env], newData))));
 
-            const envNodeComponentStatus = toEnvNodeComponentStatus(results);
-            const envComponentStatus = toEnvComponentOKCount(envNodeComponentStatus, results);
+            const envNodeComponentStatus = toEnvNodeComponentStatus(sourceData);
+            const envComponentStatus = toEnvComponentOKCount(envNodeComponentStatus, sourceData);
 
             document.getElementById('summary').replaceChildren(renderSummary(envComponentStatus, envNodeComponentStatus));
             document.getElementById('app').replaceChildren(
-                ...Object.entries(results).map(([env, r]) => renderEnv(env, envNodeComponentStatus[env], !isEnvFresh(results, env)))
+                ...Object.entries(sourceData).map(([env]) =>
+                    renderEnv(env, envNodeComponentStatus[env], isEnvStale(sourceData, env)))
             );
             load.last = Date.now();
             refresh.textContent = 'Refreshed...';
