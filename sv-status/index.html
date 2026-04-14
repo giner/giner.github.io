@@ -65,22 +65,27 @@
             return sourceData[env]?.stale;
         }
 
-        function getComponentNodes(status, component) {
-            const comp = status[component];
+        function getComponentNodes(envStatus, component) {
+            const comp = envStatus[component];
             return comp.nodes ?? comp;
         }
 
-        function getComponentDescription(status, component) {
-            return status[component]?.description;
+        function getComponentDescription(envStatus, component) {
+            return envStatus[component]?.description;
         }
 
-        function isComponentPresent(status, component) {
-            return status && status[component] && typeof status[component] === 'object';
+        function isComponentPresent(envStatus, component) {
+            return envStatus && envStatus[component] && typeof envStatus[component] === 'object';
         }
 
-        function getAllComponents(data) {
+        function getEnvComponentNames(sourceData, env) {
+            const envStatus = getEnvStatus(sourceData, env);
+            return Object.keys(envStatus).filter(c => isComponentPresent(envStatus, c));
+        }
+
+        function getAllComponentNames(data) {
             return [...new Set(
-                Object.values(data).filter(d => d).flatMap(d => Object.keys(d))
+                Object.values(data).filter(entry => entry).flatMap(entry => Object.keys(entry))
             )].sort();
         }
 
@@ -92,35 +97,20 @@
             return status === 0 ? 'OK' : status === 1 ? 'BAD' : 'N/A';
         }
 
-        function toEnvComponentDescription(sourceData) {
-            const descriptions = {};
-            for (const [env] of Object.entries(sourceData)) {
-                if (!isEnvFetched(sourceData, env)) continue;
-                const status = getEnvStatus(sourceData, env);
-                descriptions[env] = {};
-                for (const c of Object.keys(status)) {
-                    if (isComponentPresent(status, c)) {
-                        descriptions[env][c] = getComponentDescription(status, c);
-                    }
-                }
-            }
-            return descriptions;
-        }
-
         // === TRANSFORMATION ===
 
         function toEnvNodeComponentStatus(sourceData) {
             const data = {};
             for (const [env] of Object.entries(sourceData)) {
                 if (!isEnvFetched(sourceData, env)) { data[env] = null; continue; }
-                const status = getEnvStatus(sourceData, env);
-                const components = Object.keys(status).filter(c => isComponentPresent(status, c));
-                const nodes = [...new Set(components.flatMap(c => Object.keys(getComponentNodes(status, c))))];
+                const envStatus = getEnvStatus(sourceData, env);
+                const components = getEnvComponentNames(sourceData, env);
+                const nodes = [...new Set(components.flatMap(c => Object.keys(getComponentNodes(envStatus, c))))];
                 data[env] = {};
                 for (const node of nodes) {
                     data[env][node] = {};
                     for (const c of components) {
-                        const v = getComponentNodes(status, c)[node];
+                        const v = getComponentNodes(envStatus, c)[node];
                         data[env][node][c] = (v === 0 || v === 1) ? v : -1;
                     }
                 }
@@ -128,30 +118,44 @@
             return data;
         }
 
-        function toEnvComponentOKCount(envNodeComponentStatus, sourceData) {
+        function toEnvComponentStatus(envNodeComponentStatus, sourceData) {
             const allComponents = new Set(
                 Object.values(envNodeComponentStatus)
                     .filter(envNodes => envNodes)
                     .flatMap(envNodes => Object.values(envNodes).flatMap(node => Object.keys(node)))
             );
             const data = {};
-            for (const [env, nodes] of Object.entries(envNodeComponentStatus)) {
-                if (!nodes) { data[env] = null; continue; }
+            for (const [env, envNodes] of Object.entries(envNodeComponentStatus)) {
+                if (!envNodes) { data[env] = null; continue; }
                 data[env] = {};
-                const status = getEnvStatus(sourceData, env);
+                const total = Object.keys(envNodes).length;
+                const envStatus = getEnvStatus(sourceData, env);
                 for (const c of allComponents) {
-                    if (!isComponentPresent(status, c)) {
-                        data[env][c] = -1;
+                    if (!isComponentPresent(envStatus, c)) {
+                        data[env][c] = { status: -1 };
                     } else {
                         let available = 0;
-                        for (const node of Object.values(nodes)) {
+                        for (const node of Object.values(envNodes)) {
                             if (node[c] === 0) available++;
                         }
-                        data[env][c] = available;
+                        data[env][c] = { status: available === total ? 0 : 1, available, total };
                     }
                 }
             }
             return data;
+        }
+
+        function toEnvComponentDescription(sourceData) {
+            const descriptions = {};
+            for (const [env] of Object.entries(sourceData)) {
+                if (!isEnvFetched(sourceData, env)) continue;
+                const envStatus = getEnvStatus(sourceData, env);
+                descriptions[env] = {};
+                for (const c of getEnvComponentNames(sourceData, env)) {
+                    descriptions[env][c] = getComponentDescription(envStatus, c);
+                }
+            }
+            return descriptions;
         }
 
         // === RENDERING ===
@@ -164,7 +168,7 @@
         }
 
         function renderEnvTable(nodes, componentDescription) {
-            const components = getAllComponents(nodes);
+            const components = getAllComponentNames(nodes);
             const nodeNames = Object.keys(nodes).sort((a, b) => a.localeCompare(b, undefined, { sensitivity: 'base' }));
             const thead = el('tr', {}, [
                 el('th', { class: 'name-col' }, ['Name']),
@@ -193,8 +197,8 @@
             ]);
         }
 
-        function renderSummary(envComponentStatus, envNodeComponentStatus) {
-            const components = getAllComponents(envComponentStatus);
+        function renderSummary(envComponentStatus) {
+            const components = getAllComponentNames(envComponentStatus);
             const thead = el('tr', {}, [
                 el('th', { class: 'name-col' }, ['Env']),
                 ...components.map(c => el('th', {}, [c.toUpperCase()]))
@@ -206,11 +210,11 @@
                         el('td', { colspan: components.length }, ['No data'])
                     ]);
                 }
-                const total = Object.keys(envNodeComponentStatus[env]).length;
                 const cells = components.map(c => {
-                    const available = envData[c];
-                    const cls = available === total ? 'ok' : available > 0 ? 'bad' : 'na';
-                    return el('td', { class: cls }, [`${available}/${total}`]);
+                    const comp = envData[c];
+                    const cls = getStatusClass(comp.status);
+                    const label = comp.status === -1 ? 'N/A' : `${comp.available}/${comp.total}`;
+                    return el('td', { class: cls }, [label]);
                 });
                 return el('tr', {}, [el('td', { class: 'name-col' }, [env]), ...cells]);
             });
@@ -257,10 +261,10 @@
                 .map(([env]) => fetchEnv([env, urls[env]]).then(([, newData]) => Object.assign(sourceData[env], newData))));
 
             const envNodeComponentStatus = toEnvNodeComponentStatus(sourceData);
-            const envComponentStatus = toEnvComponentOKCount(envNodeComponentStatus, sourceData);
+            const envComponentStatus = toEnvComponentStatus(envNodeComponentStatus, sourceData);
             const envComponentDescription = toEnvComponentDescription(sourceData);
 
-            document.getElementById('summary').replaceChildren(renderSummary(envComponentStatus, envNodeComponentStatus));
+            document.getElementById('summary').replaceChildren(renderSummary(envComponentStatus));
             document.getElementById('app').replaceChildren(
                 ...Object.entries(sourceData).map(([env]) =>
                     renderEnv(env, envNodeComponentStatus[env], isEnvStale(sourceData, env), envComponentDescription[env]))
@@ -272,14 +276,14 @@
 
         function updateDebug() {
             const nextFetchIn = Math.max(0, POLL_INTERVAL - (Date.now() - load.last) / 1000);
-            const lines = [
-                `Screen width: ${window.innerWidth}px`,
-                `Last modified: ${JSON.stringify(state.lastModified)}`,
-                `Data updated: ${new Date(load.last).toISOString()}`,
-                `Current time: ${new Date().toISOString()}`,
-                `Next fetch in: ${nextFetchIn.toFixed(1)}s`,
-            ];
-            document.getElementById('debug').innerHTML = lines.join('<br>');
+            const debugEl = document.getElementById('debug');
+            debugEl.replaceChildren(
+                document.createTextNode(`Screen width: ${window.innerWidth}px`), el('br'),
+                document.createTextNode(`Last modified: ${JSON.stringify(state.lastModified)}`), el('br'),
+                document.createTextNode(`Data updated: ${new Date(load.last).toISOString()}`), el('br'),
+                document.createTextNode(`Current time: ${new Date().toISOString()}`), el('br'),
+                document.createTextNode(`Next fetch in: ${nextFetchIn.toFixed(1)}s`), el('br'),
+            );
         }
 
         load();
