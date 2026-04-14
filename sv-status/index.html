@@ -20,7 +20,7 @@
         #refresh { display: block; position: fixed; top: 10px; right: 10px; font-size: 14px; color: #333; z-index: 1000; }
         #summary { margin-bottom: 20px; overflow-x: auto; }
         .summary-table { margin-top: 0; }
-        #debug { position: fixed; top: 0; right: 0; background: #333; color: #0f0; padding: 5px 10px; font-family: monospace; font-size: 10px; max-width: 90vw; }
+        #debug { position: fixed; top: 0; right: 0; background: #333; color: #0f0; padding: 5px 10px; font-family: monospace; font-size: 10px; max-width: 90vw; white-space: pre; }
         table, th, td { padding: clamp(5px, 1vw, 10px); }
     </style>
 </head>
@@ -279,10 +279,15 @@
             const debugEl = document.getElementById('debug');
             debugEl.replaceChildren(
                 document.createTextNode(`Screen width: ${window.innerWidth}px`), el('br'),
-                document.createTextNode(`Last modified: ${JSON.stringify(state.lastModified)}`), el('br'),
                 document.createTextNode(`Data updated: ${new Date(load.last).toISOString()}`), el('br'),
                 document.createTextNode(`Current time: ${new Date().toISOString()}`), el('br'),
                 document.createTextNode(`Next fetch in: ${nextFetchIn.toFixed(1)}s`), el('br'),
+
+                document.createTextNode(`Last modified:`),
+                ...Object.entries(state.lastModified).flatMap(([env, timestamp]) => [
+                    el('br'),
+                    document.createTextNode(`  ${env}: ${timestamp}`),
+                ]), el('br'),
             );
         }
 
