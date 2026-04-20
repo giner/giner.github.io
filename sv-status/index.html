@@ -67,11 +67,12 @@
 
         function getComponentNodes(envStatus, component) {
             const comp = envStatus[component];
-            return comp.nodes ?? comp;
+            const nodes = Object.hasOwn(comp, "nodes") ? comp.nodes : comp;
+            return nodes ?? {};
         }
 
         function getComponentDescription(envStatus, component) {
-            return envStatus[component]?.description;
+            return envStatus[component].description;
         }
 
         function isComponentPresent(envStatus, component) {
