@@ -4,6 +4,7 @@
     <title>SV Status Monitor</title>
     <style>
         body { font-family: Arial; font-size: clamp(12px, 2vw, 16px); margin-top: 30px; }
+        #sv-selector { margin-bottom: 20px; }
         #app { display: flex; flex-wrap: wrap; column-gap: 40px; row-gap: 10px; overflow-x: auto; }
         h1 { color: #333; }
         h2 { color: #555; border-bottom: 1px solid #ddd; margin-top: 20px; }
@@ -27,24 +28,117 @@
 <body>
     <div id="refresh"></div>
     <h1>SV Status Monitor</h1>
+    <div id="sv-selector"></div>
     <div id="summary"></div>
     <div id="app">Loading...</div>
     <div id="debug" style="display:none;"></div>
     <script>
-        const urls = {
+        const dsoUrls = {
             dev: [
-                'https://info.sv.dev.global.canton.network.sv-nodeops.com/runtime/status.v2.json',
-                'https://info.sv.dev.global.canton.network.sv-nodeops.com/runtime/status.json',
+                "https://info.sv-1.dev.global.canton.network.sync.global/runtime/dso.json",
+                "https://info.sv.dev.global.canton.network.sv-nodeops.com/runtime/dso.json",
+                "https://info.sv-1.dev.global.canton.network.c7.digital/runtime/dso.json",
+                "https://info.sv-1.dev.global.canton.network.cumberland.io/runtime/dso.json",
+                "https://info.sv-1.dev.global.canton.network.digitalasset.com/runtime/dso.json",
+                "https://info.sv-1.dev.global.canton.network.fivenorth.io/runtime/dso.json",
+                "https://info.sv-1.dev.global.canton.network.lcv.mpch.io/runtime/dso.json",
+                "https://info.sv-1.dev.global.canton.network.mpch.io/runtime/dso.json",
+                "https://info.sv-1.dev.global.canton.network.orb1lp.mpch.io/runtime/dso.json",
+                "https://info.sv-1.dev.global.canton.network.proofgroup.xyz/runtime/dso.json",
+                "https://info.sv-1.dev.global.canton.network.tradeweb.com/runtime/dso.json",
+                "https://info.sv-2.dev.global.canton.network.cumberland.io/runtime/dso.json",
+                "https://info.sv-2.dev.global.canton.network.digitalasset.com/runtime/dso.json",
+                "https://info.sv.dev.global.canton.network.digitalasset.com/runtime/dso.json",
             ],
             test: [
-                'https://info.sv.test.global.canton.network.sv-nodeops.com/runtime/status.v2.json',
-                'https://info.sv.test.global.canton.network.sv-nodeops.com/runtime/status.json',
+                "https://info.sv-1.test.global.canton.network.sync.global/runtime/dso.json",
+                "https://info.sv.test.global.canton.network.sv-nodeops.com/runtime/dso.json",
+                "https://info.sv-1.test.global.canton.network.c7.digital/runtime/dso.json",
+                "https://info.sv-1.test.global.canton.network.cumberland.io/runtime/dso.json",
+                "https://info.sv-1.test.global.canton.network.digitalasset.com/runtime/dso.json",
+                "https://info.sv-1.test.global.canton.network.fivenorth.io/runtime/dso.json",
+                "https://info.sv-1.test.global.canton.network.lcv.mpch.io/runtime/dso.json",
+                "https://info.sv-1.test.global.canton.network.mpch.io/runtime/dso.json",
+                "https://info.sv-1.test.global.canton.network.orb1lp.mpch.io/runtime/dso.json",
+                "https://info.sv-1.test.global.canton.network.proofgroup.xyz/runtime/dso.json",
+                "https://info.sv-2.test.global.canton.network.cumberland.io/runtime/dso.json",
+                "https://info.sv-2.test.global.canton.network.digitalasset.com/runtime/dso.json",
+                "https://info.sv.test.global.canton.network.tradeweb.com/runtime/dso.json",
             ],
             main: [
-                'https://info.sv.global.canton.network.sv-nodeops.com/runtime/status.v2.json',
-                'https://info.sv.global.canton.network.sv-nodeops.com/runtime/status.json',
+                "https://info.sv-1.global.canton.network.sync.global/runtime/dso.json",
+                "https://info.sv.global.canton.network.sv-nodeops.com/runtime/dso.json",
+                "https://info.sv-1.global.canton.network.c7.digital/runtime/dso.json",
+                "https://info.sv-1.global.canton.network.cumberland.io/runtime/dso.json",
+                "https://info.sv-1.global.canton.network.digitalasset.com/runtime/dso.json",
+                "https://info.sv-1.global.canton.network.fivenorth.io/runtime/dso.json",
+                "https://info.sv-1.global.canton.network.lcv.mpch.io/runtime/dso.json",
+                "https://info.sv-1.global.canton.network.mpch.io/runtime/dso.json",
+                "https://info.sv-1.global.canton.network.orb1lp.mpch.io/runtime/dso.json",
+                "https://info.sv-1.global.canton.network.proofgroup.xyz/runtime/dso.json",
+                "https://info.sv-1.global.canton.network.tradeweb.com/runtime/dso.json",
+                "https://info.sv-2.global.canton.network.cumberland.io/runtime/dso.json",
+                "https://info.sv-2.global.canton.network.digitalasset.com/runtime/dso.json",
             ],
         };
+        let allStatusUrls = {};
+        let allSvs = [];
+        let selectedSv;
+        let selectedSvStatusUrls = {};
+
+        async function loadSvUrls() {
+            const allStatusUrls = {};
+            let svFromDso;
+            await Promise.all(Object.entries(dsoUrls).map(async ([env, urls]) => {
+                try {
+                    let json;
+                    for (const url of urls) {
+                        const res = await fetch(url);
+                        if (res.ok) { json = await res.json(); break; }
+                    }
+                    if (!json) throw new Error();
+                    if (!svFromDso) svFromDso = json.sv_party_id?.split('::')[0];
+                    allStatusUrls[env] = {};
+                    for (const svState of json.sv_node_states) {
+                        const svName = svState.contract.payload.svName;
+                        const scanUrl = svState.contract.payload.state.synchronizerNodes[0][1].scan.publicUrl;
+                        allStatusUrls[env][svName] = scanUrl.replace(/^https:\/\/scan\./, 'https://info.') + '/runtime/status.json';
+                    }
+                } catch {
+                    allStatusUrls[env] = null;
+                }
+            }));
+            return { allStatusUrls, svFromDso };
+        }
+
+        function buildSelectedSvStatusUrls() {
+            return Object.fromEntries(Object.entries(dsoUrls).map(([env]) => {
+                let url = allStatusUrls[env]?.[selectedSv];
+                // TODO: remove this fallback once dso.json is available everywhere
+                if (!url && selectedSv === 'SV-Nodeops-Limited') {
+                    const nodeops = dsoUrls[env].find(u => u.endsWith('.sv-nodeops.com/runtime/dso.json'));
+                    if (nodeops) url = nodeops.replace('dso.json', 'status.json');
+                }
+                return [env, url];
+            }));
+        }
+
+        function selectSv(sv) {
+            selectedSv = sv;
+            const params = new URLSearchParams(window.location.search);
+            params.set('sv', sv);
+            window.history.replaceState({}, '', '?' + params.toString());
+            selectedSvStatusUrls = buildSelectedSvStatusUrls();
+            load();
+        }
+
+        async function init() {
+            ({ allStatusUrls, svFromDso } = await loadSvUrls());
+            allSvs = [...new Set(Object.values(allStatusUrls).filter(Boolean).flatMap(e => Object.keys(e)))].sort();
+            const sv = new URLSearchParams(window.location.search).get('sv') || svFromDso || allSvs[0];
+            selectSv(sv);
+            renderSvSelector();
+        }
 
         const debug = new URLSearchParams(window.location.search).has('debug');
         const STALE_THRESHOLD = 90;
@@ -224,8 +318,9 @@
 
         // === FETCHING ===
 
-        async function fetchEnv([env, urlList]) {
-            const tryFetch = async (url) => {
+        async function fetchEnv([env, url]) {
+            if (!url) return [env, { ok: false }];
+            try {
                 const res = await fetch(url);
                 if (!res.ok) throw new Error(`HTTP ${res.status}`);
                 const lastModified = res.headers.get('last-modified');
@@ -233,25 +328,17 @@
                 const generatedAt = json.generated_at || (lastModified && new Date(lastModified));
                 const stale = generatedAt && Date.now() - generatedAt > STALE_THRESHOLD * 1000;
                 if (debug) state.lastModified[env] = lastModified && new Date(lastModified).toISOString();
-                return { status: json.status, stale };
-            };
-
-            for (const url of urlList) {
-                try {
-                    const result = await tryFetch(url);
-                    return [env, { ...result, ok: true }];
-                } catch {
-                    continue;
-                }
+                return [env, { status: json.status, stale, ok: true }];
+            } catch {
+                return [env, { ok: false }];
             }
-            return [env, { ok: false }];
         }
 
         async function load() {
             const refresh = document.getElementById('refresh');
             refresh.textContent = 'Refreshing...';
             const sourceData = Object.fromEntries(
-                await Promise.all(Object.entries(urls).map(fetchEnv))
+                await Promise.all(Object.entries(selectedSvStatusUrls).map(fetchEnv))
             );
 
             // Retry fetching stale environments immediately, this forces
@@ -259,7 +346,7 @@
             // the browser
             await Promise.all(Object.entries(sourceData)
                 .filter(([env]) => isEnvFetched(sourceData, env) && isEnvStale(sourceData, env))
-                .map(([env]) => fetchEnv([env, urls[env]]).then(([, newData]) => Object.assign(sourceData[env], newData))));
+                .map(([env]) => fetchEnv([env, selectedSvStatusUrls[env]]).then(([, newData]) => Object.assign(sourceData[env], newData))));
 
             const envNodeComponentStatus = toEnvNodeComponentStatus(sourceData);
             const envComponentStatus = toEnvComponentStatus(envNodeComponentStatus, sourceData);
@@ -292,7 +379,22 @@
             );
         }
 
-        load();
+        function renderSvSelector() {
+            const container = document.getElementById('sv-selector');
+            const label = document.createTextNode('As viewed from SV: ');
+            const select = document.createElement('select');
+            for (const sv of allSvs) {
+                const opt = document.createElement('option');
+                opt.value = sv;
+                opt.textContent = sv;
+                select.appendChild(opt);
+            }
+            select.value = selectedSv;
+            select.addEventListener('change', () => selectSv(select.value));
+            container.replaceChildren(label, select);
+        }
+
+        init();
         setInterval(() => Date.now() - load.last > POLL_INTERVAL * 1000 && load(), 1000);
 
         if (debug) {
