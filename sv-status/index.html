@@ -129,6 +129,7 @@
             params.set('sv', sv);
             window.history.replaceState({}, '', '?' + params.toString());
             selectedSvStatusUrls = buildSelectedSvStatusUrls();
+            state.lastModified = {};
             load();
         }
 
