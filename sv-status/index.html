@@ -336,6 +336,7 @@
         }
 
         async function load() {
+            const svAtStart = selectedSv;
             const refresh = document.getElementById('refresh');
             refresh.textContent = 'Refreshing...';
             const sourceData = Object.fromEntries(
@@ -348,6 +349,8 @@
             await Promise.all(Object.entries(sourceData)
                 .filter(([env]) => isEnvFetched(sourceData, env) && isEnvStale(sourceData, env))
                 .map(([env]) => fetchEnv([env, selectedSvStatusUrls[env]]).then(([, newData]) => Object.assign(sourceData[env], newData))));
+
+            if (selectedSv !== svAtStart) return; // prevent stale render after SV switch
 
             const envNodeComponentStatus = toEnvNodeComponentStatus(sourceData);
             const envComponentStatus = toEnvComponentStatus(envNodeComponentStatus, sourceData);
