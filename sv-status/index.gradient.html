@@ -1,0 +1,408 @@
+<html>
+<head>
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>SV Status Monitor</title>
+    <style>
+        body { font-family: Arial; font-size: clamp(12px, 2vw, 16px); margin-top: 30px; }
+        #sv-selector { margin-bottom: 20px; }
+        #app { display: flex; flex-wrap: wrap; column-gap: 40px; row-gap: 10px; overflow-x: auto; -webkit-mask-image: linear-gradient(to right, #000 95%, transparent); mask-image: linear-gradient(to right, #000 95%, transparent); }
+        h1 { color: #333; }
+        h2 { color: #555; border-bottom: 1px solid #ddd; margin-top: 20px; }
+        .env { display: inline-block; vertical-align: top; }
+        table { border-collapse: collapse; margin-top: 10px; }
+        th, td { padding: 10px; border-bottom: 1px solid #ddd; white-space: nowrap; text-align: center; font-size: clamp(12px, 2vw, 16px); }
+        th { background: #f3f3f3; font-weight: bold; }
+        .name-col { min-width: 150px; text-align: left; }
+        .ok { color: #4CAF50; font-weight: bold; }
+        .bad { color: #f44336; font-weight: bold; }
+        .na { color: #999; }
+        .stale-env { opacity: 0.7; }
+        .stale-env h2::after { content: ' (stale)'; color: #f44336; }
+        #refresh { display: block; position: fixed; top: 10px; right: 10px; font-size: 14px; color: #333; z-index: 1000; }
+        #summary { margin-bottom: 20px; overflow-x: auto; -webkit-mask-image: linear-gradient(to right, #000 95%, transparent); mask-image: linear-gradient(to right, #000 95%, transparent); }
+        .summary-table { margin-top: 0; }
+        #debug { position: fixed; top: 0; right: 0; background: #333; color: #0f0; padding: 5px 10px; font-family: monospace; font-size: 10px; max-width: 90vw; white-space: pre; }
+        table, th, td { padding: clamp(5px, 1vw, 10px); }
+    </style>
+</head>
+<body>
+    <div id="refresh"></div>
+    <h1>SV Status Monitor</h1>
+    <div id="sv-selector"></div>
+    <div id="summary"></div>
+    <div id="app">Loading...</div>
+    <div id="debug" style="display:none;"></div>
+    <script>
+        const dsoUrls = {
+            dev: [
+                "https://info.sv-1.dev.global.canton.network.sync.global/runtime/dso.json",
+                "https://info.sv.dev.global.canton.network.sv-nodeops.com/runtime/dso.json",
+                "https://info.sv-1.dev.global.canton.network.c7.digital/runtime/dso.json",
+                "https://info.sv-1.dev.global.canton.network.cumberland.io/runtime/dso.json",
+                "https://info.sv-1.dev.global.canton.network.digitalasset.com/runtime/dso.json",
+                "https://info.sv-1.dev.global.canton.network.fivenorth.io/runtime/dso.json",
+                "https://info.sv-1.dev.global.canton.network.lcv.mpch.io/runtime/dso.json",
+                "https://info.sv-1.dev.global.canton.network.mpch.io/runtime/dso.json",
+                "https://info.sv-1.dev.global.canton.network.orb1lp.mpch.io/runtime/dso.json",
+                "https://info.sv-1.dev.global.canton.network.proofgroup.xyz/runtime/dso.json",
+                "https://info.sv-1.dev.global.canton.network.tradeweb.com/runtime/dso.json",
+                "https://info.sv-2.dev.global.canton.network.cumberland.io/runtime/dso.json",
+                "https://info.sv-2.dev.global.canton.network.digitalasset.com/runtime/dso.json",
+                "https://info.sv.dev.global.canton.network.digitalasset.com/runtime/dso.json",
+            ],
+            test: [
+                "https://info.sv-1.test.global.canton.network.sync.global/runtime/dso.json",
+                "https://info.sv.test.global.canton.network.sv-nodeops.com/runtime/dso.json",
+                "https://info.sv-1.test.global.canton.network.c7.digital/runtime/dso.json",
+                "https://info.sv-1.test.global.canton.network.cumberland.io/runtime/dso.json",
+                "https://info.sv-1.test.global.canton.network.digitalasset.com/runtime/dso.json",
+                "https://info.sv-1.test.global.canton.network.fivenorth.io/runtime/dso.json",
+                "https://info.sv-1.test.global.canton.network.lcv.mpch.io/runtime/dso.json",
+                "https://info.sv-1.test.global.canton.network.mpch.io/runtime/dso.json",
+                "https://info.sv-1.test.global.canton.network.orb1lp.mpch.io/runtime/dso.json",
+                "https://info.sv-1.test.global.canton.network.proofgroup.xyz/runtime/dso.json",
+                "https://info.sv-2.test.global.canton.network.cumberland.io/runtime/dso.json",
+                "https://info.sv-2.test.global.canton.network.digitalasset.com/runtime/dso.json",
+                "https://info.sv.test.global.canton.network.tradeweb.com/runtime/dso.json",
+            ],
+            main: [
+                "https://info.sv-1.global.canton.network.sync.global/runtime/dso.json",
+                "https://info.sv.global.canton.network.sv-nodeops.com/runtime/dso.json",
+                "https://info.sv-1.global.canton.network.c7.digital/runtime/dso.json",
+                "https://info.sv-1.global.canton.network.cumberland.io/runtime/dso.json",
+                "https://info.sv-1.global.canton.network.digitalasset.com/runtime/dso.json",
+                "https://info.sv-1.global.canton.network.fivenorth.io/runtime/dso.json",
+                "https://info.sv-1.global.canton.network.lcv.mpch.io/runtime/dso.json",
+                "https://info.sv-1.global.canton.network.mpch.io/runtime/dso.json",
+                "https://info.sv-1.global.canton.network.orb1lp.mpch.io/runtime/dso.json",
+                "https://info.sv-1.global.canton.network.proofgroup.xyz/runtime/dso.json",
+                "https://info.sv-1.global.canton.network.tradeweb.com/runtime/dso.json",
+                "https://info.sv-2.global.canton.network.cumberland.io/runtime/dso.json",
+                "https://info.sv-2.global.canton.network.digitalasset.com/runtime/dso.json",
+            ],
+        };
+        let allStatusUrls = {};
+        let svSelectorOptions = []; // SV names fetched from DSO for the dropdown selector
+        let selectedSv;
+        let selectedSvStatusUrls = {};
+
+        async function loadSvUrls() {
+            const allStatusUrls = {};
+            let svFromDso;
+            await Promise.all(Object.entries(dsoUrls).map(async ([env, urls]) => {
+                try {
+                    let json;
+                    for (const url of urls) {
+                        const res = await fetch(url);
+                        if (res.ok) { json = await res.json(); break; }
+                    }
+                    if (!json) throw new Error();
+                    if (!svFromDso) svFromDso = json.sv_party_id?.split('::')[0];
+                    allStatusUrls[env] = {};
+                    for (const svState of json.sv_node_states) {
+                        const svName = svState.contract.payload.svName;
+                        const scanUrl = svState.contract.payload.state.synchronizerNodes[0][1].scan.publicUrl;
+                        allStatusUrls[env][svName] = scanUrl.replace(/^https:\/\/scan\./, 'https://info.') + '/runtime/status.json';
+                    }
+                } catch {
+                    allStatusUrls[env] = null;
+                }
+            }));
+            return { allStatusUrls, svFromDso };
+        }
+
+        function buildSelectedSvStatusUrls() {
+            return Object.fromEntries(Object.entries(dsoUrls).map(([env]) => {
+                let url = allStatusUrls[env]?.[selectedSv];
+                // TODO: remove this fallback once dso.json is available everywhere
+                if (!url && selectedSv === 'SV-Nodeops-Limited') {
+                    const nodeops = dsoUrls[env].find(u => u.endsWith('.sv-nodeops.com/runtime/dso.json'));
+                    if (nodeops) url = nodeops.replace('dso.json', 'status.json');
+                }
+                return [env, url];
+            }));
+        }
+
+        function selectSv(sv) {
+            selectedSv = sv;
+            const params = new URLSearchParams(window.location.search);
+            params.set('sv', sv);
+            window.history.replaceState({}, '', '?' + params.toString());
+            selectedSvStatusUrls = buildSelectedSvStatusUrls();
+            state.lastModified = {};
+            load();
+        }
+
+        async function init() {
+            ({ allStatusUrls, svFromDso } = await loadSvUrls());
+            svSelectorOptions = [...new Set(Object.values(allStatusUrls).filter(Boolean).flatMap(e => Object.keys(e)))].sort();
+            const sv = new URLSearchParams(window.location.search).get('sv') || svFromDso || svSelectorOptions[0];
+            selectSv(sv);
+            renderSvSelector();
+        }
+
+        const debug = new URLSearchParams(window.location.search).has('debug');
+        const STALE_THRESHOLD = 90;
+        const POLL_INTERVAL = 10;
+        const state = { lastModified: {} };
+
+        // === DATA ACCESS ===
+
+        function getEnvStatus(sourceData, env) {
+            return sourceData[env]?.status;
+        }
+
+        function isEnvFetched(sourceData, env) {
+            return sourceData[env]?.ok;
+        }
+
+        function isEnvStale(sourceData, env) {
+            return sourceData[env]?.stale;
+        }
+
+        function getComponentNodes(envStatus, component) {
+            const comp = envStatus[component];
+            const nodes = Object.hasOwn(comp, "nodes") ? comp.nodes : comp;
+            return nodes ?? {};
+        }
+
+        function getComponentDescription(envStatus, component) {
+            return envStatus[component].description;
+        }
+
+        function isComponentPresent(envStatus, component) {
+            return envStatus && envStatus[component] && typeof envStatus[component] === 'object';
+        }
+
+        function getEnvComponentNames(sourceData, env) {
+            const envStatus = getEnvStatus(sourceData, env);
+            return Object.keys(envStatus).filter(c => isComponentPresent(envStatus, c));
+        }
+
+        function getAllComponentNames(data) {
+            return [...new Set(
+                Object.values(data).filter(entry => entry).flatMap(entry => Object.keys(entry))
+            )].sort();
+        }
+
+        function getStatusClass(status) {
+            return status === 0 ? 'ok' : status === 1 ? 'bad' : 'na';
+        }
+
+        function getStatusLabel(status) {
+            return status === 0 ? 'OK' : status === 1 ? 'BAD' : 'N/A';
+        }
+
+        // === TRANSFORMATION ===
+
+        function toEnvNodeComponentStatus(sourceData) {
+            const data = {};
+            for (const [env] of Object.entries(sourceData)) {
+                if (!isEnvFetched(sourceData, env)) { data[env] = null; continue; }
+                const envStatus = getEnvStatus(sourceData, env);
+                const components = getEnvComponentNames(sourceData, env);
+                const nodes = [...new Set(components.flatMap(c => Object.keys(getComponentNodes(envStatus, c))))];
+                data[env] = {};
+                for (const node of nodes) {
+                    data[env][node] = {};
+                    for (const c of components) {
+                        const v = getComponentNodes(envStatus, c)[node];
+                        data[env][node][c] = (v === 0 || v === 1) ? v : -1;
+                    }
+                }
+            }
+            return data;
+        }
+
+        function toEnvComponentStatus(envNodeComponentStatus, sourceData) {
+            const allComponents = new Set(
+                Object.values(envNodeComponentStatus)
+                    .filter(envNodes => envNodes)
+                    .flatMap(envNodes => Object.values(envNodes).flatMap(node => Object.keys(node)))
+            );
+            const data = {};
+            for (const [env, envNodes] of Object.entries(envNodeComponentStatus)) {
+                if (!envNodes) { data[env] = null; continue; }
+                data[env] = {};
+                const total = Object.keys(envNodes).length;
+                const envStatus = getEnvStatus(sourceData, env);
+                for (const c of allComponents) {
+                    if (!isComponentPresent(envStatus, c)) {
+                        data[env][c] = { status: -1 };
+                    } else {
+                        let available = 0;
+                        for (const node of Object.values(envNodes)) {
+                            if (node[c] === 0) available++;
+                        }
+                        data[env][c] = { status: available === total ? 0 : 1, available, total };
+                    }
+                }
+            }
+            return data;
+        }
+
+        function toEnvComponentDescription(sourceData) {
+            const descriptions = {};
+            for (const [env] of Object.entries(sourceData)) {
+                if (!isEnvFetched(sourceData, env)) continue;
+                const envStatus = getEnvStatus(sourceData, env);
+                descriptions[env] = {};
+                for (const c of getEnvComponentNames(sourceData, env)) {
+                    descriptions[env][c] = getComponentDescription(envStatus, c);
+                }
+            }
+            return descriptions;
+        }
+
+        // === RENDERING ===
+
+        function el(tag, attrs = {}, children = []) {
+            const e = document.createElement(tag);
+            Object.entries(attrs).forEach(([k, v]) => e.setAttribute(k, v));
+            children.forEach(c => e.appendChild(typeof c === 'string' ? document.createTextNode(c) : c));
+            return e;
+        }
+
+        function renderEnvTable(nodes, componentDescription) {
+            const components = getAllComponentNames(nodes);
+            const nodeNames = Object.keys(nodes).sort((a, b) => a.localeCompare(b, undefined, { sensitivity: 'base' }));
+            const thead = el('tr', {}, [
+                el('th', { class: 'name-col' }, ['Name']),
+                ...components.map(c => el('th', { title: componentDescription?.[c] }, [c.toUpperCase()]))
+            ]);
+            const rows = nodeNames.map(node => {
+                const cells = components.map(c => {
+                    const v = nodes[node][c];
+                    return el('td', {}, [el('span', { class: getStatusClass(v) }, [getStatusLabel(v)])]);
+                });
+                return el('tr', {}, [el('td', { class: 'name-col' }, [node]), ...cells]);
+            });
+            return el('table', {}, [thead, ...rows]);
+        }
+
+        function renderEnv(envName, nodes, stale, componentDescription) {
+            if (!nodes) {
+                return el('div', { class: 'env' }, [
+                    el('h2', {}, [envName]),
+                    'No data available'
+                ]);
+            }
+            return el('div', { class: stale ? 'env stale-env' : 'env' }, [
+                el('h2', {}, [envName]),
+                renderEnvTable(nodes, componentDescription)
+            ]);
+        }
+
+        function renderSummary(envComponentStatus) {
+            const components = getAllComponentNames(envComponentStatus);
+            const thead = el('tr', {}, [
+                el('th', { class: 'name-col' }, ['Env']),
+                ...components.map(c => el('th', {}, [c.toUpperCase()]))
+            ]);
+            const rows = Object.entries(envComponentStatus).map(([env, envData]) => {
+                if (!envData) {
+                    return el('tr', {}, [
+                        el('td', { class: 'name-col' }, [env]),
+                        el('td', { colspan: components.length }, ['No data'])
+                    ]);
+                }
+                const cells = components.map(c => {
+                    const comp = envData[c];
+                    const cls = getStatusClass(comp.status);
+                    const label = comp.status === -1 ? 'N/A' : `${comp.available}/${comp.total}`;
+                    return el('td', { class: cls }, [label]);
+                });
+                return el('tr', {}, [el('td', { class: 'name-col' }, [env]), ...cells]);
+            });
+            return el('table', { class: 'summary-table' }, [thead, ...rows]);
+        }
+
+        // === FETCHING ===
+
+        async function fetchEnv([env, url]) {
+            if (!url) return [env, { ok: false }];
+            try {
+                const res = await fetch(url);
+                if (!res.ok) throw new Error(`HTTP ${res.status}`);
+                const lastModified = res.headers.get('last-modified');
+                const json = await res.json();
+                const generatedAt = json.generated_at || (lastModified && new Date(lastModified));
+                const stale = generatedAt && Date.now() - generatedAt > STALE_THRESHOLD * 1000;
+                if (debug) state.lastModified[env] = lastModified && new Date(lastModified).toISOString();
+                return [env, { status: json.status, stale, ok: true }];
+            } catch {
+                return [env, { ok: false }];
+            }
+        }
+
+        async function load() {
+            const refresh = document.getElementById('refresh');
+            refresh.textContent = 'Refreshing...';
+            const sourceData = Object.fromEntries(
+                await Promise.all(Object.entries(selectedSvStatusUrls).map(fetchEnv))
+            );
+
+            // Retry fetching stale environments immediately, this forces
+            // mobile browsers to revalidate the cache immediately on reopening
+            // the browser
+            await Promise.all(Object.entries(sourceData)
+                .filter(([env]) => isEnvFetched(sourceData, env) && isEnvStale(sourceData, env))
+                .map(([env]) => fetchEnv([env, selectedSvStatusUrls[env]]).then(([, newData]) => Object.assign(sourceData[env], newData))));
+
+            const envNodeComponentStatus = toEnvNodeComponentStatus(sourceData);
+            const envComponentStatus = toEnvComponentStatus(envNodeComponentStatus, sourceData);
+            const envComponentDescription = toEnvComponentDescription(sourceData);
+
+            document.getElementById('summary').replaceChildren(renderSummary(envComponentStatus));
+            document.getElementById('app').replaceChildren(
+                ...Object.entries(sourceData).map(([env]) =>
+                    renderEnv(env, envNodeComponentStatus[env], isEnvStale(sourceData, env), envComponentDescription[env]))
+            );
+            load.last = Date.now();
+            refresh.textContent = 'Refreshed...';
+            setTimeout(() => refresh.textContent = `Last refreshed: ${new Date(load.last).toLocaleTimeString()}`, 500);
+        }
+
+        function updateDebug() {
+            const nextFetchIn = Math.max(0, POLL_INTERVAL - (Date.now() - load.last) / 1000);
+            const debugEl = document.getElementById('debug');
+            debugEl.replaceChildren(
+                document.createTextNode(`Screen width: ${window.innerWidth}px`), el('br'),
+                document.createTextNode(`Data updated: ${new Date(load.last).toISOString()}`), el('br'),
+                document.createTextNode(`Current time: ${new Date().toISOString()}`), el('br'),
+                document.createTextNode(`Next fetch in: ${nextFetchIn.toFixed(1)}s`), el('br'),
+
+                document.createTextNode(`Last modified:`),
+                ...Object.entries(state.lastModified).flatMap(([env, timestamp]) => [
+                    el('br'),
+                    document.createTextNode(`  ${env}: ${timestamp}`),
+                ]), el('br'),
+            );
+        }
+
+        function renderSvSelector() {
+            const container = document.getElementById('sv-selector');
+            const label = document.createTextNode('As viewed from SV: ');
+            const select = document.createElement('select');
+            for (const sv of svSelectorOptions) {
+                const opt = document.createElement('option');
+                opt.value = sv;
+                opt.textContent = sv;
+                select.appendChild(opt);
+            }
+            select.value = selectedSv;
+            select.addEventListener('change', () => selectSv(select.value));
+            container.replaceChildren(label, select);
+        }
+
+        init();
+        setInterval(() => Date.now() - load.last > POLL_INTERVAL * 1000 && load(), 1000);
+
+        if (debug) {
+            document.getElementById('debug').style.display = 'block';
+            setInterval(updateDebug, 100);
+            updateDebug();
+        }
+    </script>
+</body>
+</html>
