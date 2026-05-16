@@ -82,7 +82,7 @@
             ],
         };
         let allStatusUrls = {};
-        let allSvs = [];
+        let svSelectorOptions = []; // SV names fetched from DSO for the dropdown selector
         let selectedSv;
         let selectedSvStatusUrls = {};
 
@@ -135,8 +135,8 @@
 
         async function init() {
             ({ allStatusUrls, svFromDso } = await loadSvUrls());
-            allSvs = [...new Set(Object.values(allStatusUrls).filter(Boolean).flatMap(e => Object.keys(e)))].sort();
-            const sv = new URLSearchParams(window.location.search).get('sv') || svFromDso || allSvs[0];
+            svSelectorOptions = [...new Set(Object.values(allStatusUrls).filter(Boolean).flatMap(e => Object.keys(e)))].sort();
+            const sv = new URLSearchParams(window.location.search).get('sv') || svFromDso || svSelectorOptions[0];
             selectSv(sv);
             renderSvSelector();
         }
@@ -384,7 +384,7 @@
             const container = document.getElementById('sv-selector');
             const label = document.createTextNode('As viewed from SV: ');
             const select = document.createElement('select');
-            for (const sv of allSvs) {
+            for (const sv of svSelectorOptions) {
                 const opt = document.createElement('option');
                 opt.value = sv;
                 opt.textContent = sv;
