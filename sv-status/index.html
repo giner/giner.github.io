@@ -18,6 +18,7 @@
         .na { color: #999; }
         .stale-env { opacity: 0.7; }
         .stale-env h2::after { content: ' (stale)'; color: #f44336; }
+        .tip { margin-left: 4px; }
         .tip::after { content: attr(data-tip); position: absolute; left: 0; display: none; background: rgba(0, 0, 0, 0.75); color: #fff; padding: 4px 8px; border-radius: 4px; z-index: 10; }
         .tip:hover::after, .tip:focus::after { display: block; }
         #refresh { display: block; position: fixed; top: 10px; right: 10px; font-size: 14px; color: #333; z-index: 1000; }
@@ -273,7 +274,7 @@
                 ...components.map(c => {
                     const desc = componentDescription?.[c];
                     const children = [document.createTextNode(c.toUpperCase())];
-                    if (desc) children.push(el('span', { class: 'tip', tabindex: '0', 'data-tip': desc }, [' ⓘ']));
+                    if (desc) children.push(el('span', { class: 'tip', tabindex: '0', 'data-tip': desc }, ['ⓘ']));
                     return el('th', {}, children);
                 })
             ]);
