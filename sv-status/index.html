@@ -11,13 +11,15 @@
         .env { display: inline-block; vertical-align: top; }
         table { border-collapse: collapse; margin-top: 10px; }
         th, td { padding: 10px; border-bottom: 1px solid #ddd; white-space: nowrap; text-align: center; font-size: clamp(12px, 2vw, 16px); }
-        th { background: #f3f3f3; font-weight: bold; }
+        th { background: #f3f3f3; font-weight: bold; position: relative; }
         .name-col { text-align: left; }
         .ok { color: #4CAF50; font-weight: bold; }
         .bad { color: #f44336; font-weight: bold; }
         .na { color: #999; }
         .stale-env { opacity: 0.7; }
         .stale-env h2::after { content: ' (stale)'; color: #f44336; }
+        .tip::after { content: attr(data-tip); position: absolute; left: 0; display: none; background: rgba(0, 0, 0, 0.75); color: #fff; padding: 4px 8px; border-radius: 4px; z-index: 10; }
+        .tip:hover::after, .tip:focus::after { display: block; }
         #refresh { display: block; position: fixed; top: 10px; right: 10px; font-size: 14px; color: #333; z-index: 1000; }
         #summary { margin-bottom: 20px; overflow-x: auto; }
         .summary-table { margin-top: 0; }
@@ -268,7 +270,12 @@
             const nodeNames = Object.keys(nodes).sort((a, b) => a.localeCompare(b, undefined, { sensitivity: 'base' }));
             const thead = el('tr', {}, [
                 el('th', { class: 'name-col' }, ['Name']),
-                ...components.map(c => el('th', { title: componentDescription?.[c] }, [c.toUpperCase()]))
+                ...components.map(c => {
+                    const desc = componentDescription?.[c];
+                    const children = [document.createTextNode(c.toUpperCase())];
+                    if (desc) children.push(el('span', { class: 'tip', tabindex: '0', 'data-tip': desc }, [' ⓘ']));
+                    return el('th', {}, children);
+                })
             ]);
             const rows = nodeNames.map(node => {
                 const cells = components.map(c => {
