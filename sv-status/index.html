@@ -393,18 +393,21 @@
         function updateDebug() {
             const nextFetchIn = Math.max(0, POLL_INTERVAL - (Date.now() - load.last) / 1000);
             const debugEl = document.getElementById('debug');
-            debugEl.replaceChildren(
-                document.createTextNode(`Screen width: ${window.innerWidth}px`), el('br'),
-                document.createTextNode(`Data updated: ${new Date(load.last).toISOString()}`), el('br'),
-                document.createTextNode(`Current time: ${new Date().toISOString()}`), el('br'),
-                document.createTextNode(`Next fetch in: ${nextFetchIn.toFixed(1)}s`), el('br'),
 
-                document.createTextNode(`Last modified:`),
-                ...Object.entries(state.lastModified).flatMap(([env, timestamp]) => [
-                    el('br'),
-                    document.createTextNode(`  ${env}: ${timestamp}`),
-                ]), el('br'),
+            const lastModifiedLines = Object.entries(state.lastModified).map(
+                ([env, timestamp]) => `  ${env}: ${timestamp}`
             );
+
+            const lines = [
+                `Screen width: ${window.innerWidth}px`,
+                `Data updated: ${new Date(load.last).toISOString()}`,
+                `Current time: ${new Date().toISOString()}`,
+                `Next fetch in: ${nextFetchIn.toFixed(1)}s`,
+                `Last modified:`,
+                ...lastModifiedLines
+            ];
+
+            debugEl.textContent = lines.join('\n');
         }
 
         function renderSvSelector() {
