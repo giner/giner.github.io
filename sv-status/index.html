@@ -133,7 +133,7 @@
             window.history.replaceState({}, '', '?' + params.toString());
             selectedSvStatusUrls = buildSelectedSvStatusUrls();
             state.lastModified = {};
-            load();
+            load(true);
         }
 
         async function init() {
@@ -330,7 +330,7 @@
         async function fetchEnv([env, url]) {
             if (!url) return [env, { ok: false }];
             try {
-                const res = await fetch(url);
+                const res = await fetch(url, { signal: AbortSignal.timeout(5000) });
                 if (!res.ok) throw new Error(`HTTP ${res.status}`);
                 const lastModified = res.headers.get('last-modified');
                 const json = await res.json();
@@ -343,36 +343,52 @@
             }
         }
 
-        async function load() {
-            const svAtStart = selectedSv;
-            const refresh = document.getElementById('refresh');
-            refresh.textContent = 'Refreshing...';
-            const sourceData = Object.fromEntries(
-                await Promise.all(Object.entries(selectedSvStatusUrls).map(fetchEnv))
-            );
+        const load = (() => {
+            let loadId = 0;
+            let running = false;
 
-            // Retry fetching stale environments immediately, this forces
-            // mobile browsers to revalidate the cache immediately on reopening
-            // the browser
-            await Promise.all(Object.entries(sourceData)
-                .filter(([env]) => isEnvFetched(sourceData, env) && isEnvStale(sourceData, env))
-                .map(([env]) => fetchEnv([env, selectedSvStatusUrls[env]]).then(([, newData]) => Object.assign(sourceData[env], newData))));
+            return async function load(force = false) {
+                if (running && !force) return;
+                running = true;
+                const myId = ++loadId;
 
-            if (selectedSv !== svAtStart) return; // prevent stale render after SV switch
+                try {
+                    const svAtStart = selectedSv;
+                    const refresh = document.getElementById('refresh');
+                    refresh.textContent = 'Refreshing...';
 
-            const envNodeComponentStatus = toEnvNodeComponentStatus(sourceData);
-            const envComponentStatus = toEnvComponentStatus(envNodeComponentStatus, sourceData);
-            const envComponentDescription = toEnvComponentDescription(sourceData);
+                    const sourceData = Object.fromEntries(
+                        await Promise.all(Object.entries(selectedSvStatusUrls).map(fetchEnv))
+                    );
 
-            document.getElementById('summary').replaceChildren(renderSummary(envComponentStatus));
-            document.getElementById('app').replaceChildren(
-                ...Object.entries(sourceData).map(([env]) =>
-                    renderEnv(env, envNodeComponentStatus[env], isEnvStale(sourceData, env), envComponentDescription[env]))
-            );
-            load.last = Date.now();
-            refresh.textContent = 'Refreshed...';
-            setTimeout(() => refresh.textContent = `Last refreshed: ${new Date(load.last).toLocaleTimeString()}`, 500);
-        }
+                    // Retry fetching stale environments immediately, this forces
+                    // mobile browsers to revalidate the cache immediately on reopening
+                    // the browser
+                    await Promise.all(Object.entries(sourceData)
+                        .filter(([env]) => isEnvFetched(sourceData, env) && isEnvStale(sourceData, env))
+                        .map(([env]) => fetchEnv([env, selectedSvStatusUrls[env]]).then(([, newData]) => Object.assign(sourceData[env], newData))));
+
+                    if (myId !== loadId) return; // stale — a newer load started
+                    if (selectedSv !== svAtStart) return; // prevent stale render after SV switch
+
+                    const envNodeComponentStatus = toEnvNodeComponentStatus(sourceData);
+                    const envComponentStatus = toEnvComponentStatus(envNodeComponentStatus, sourceData);
+                    const envComponentDescription = toEnvComponentDescription(sourceData);
+
+                    document.getElementById('summary').replaceChildren(renderSummary(envComponentStatus));
+                    document.getElementById('app').replaceChildren(
+                        ...Object.entries(sourceData).map(([env]) =>
+                            renderEnv(env, envNodeComponentStatus[env], isEnvStale(sourceData, env), envComponentDescription[env]))
+                    );
+
+                    load.last = Date.now();
+                    refresh.textContent = 'Refreshed...';
+                    setTimeout(() => refresh.textContent = `Last refreshed: ${new Date(load.last).toLocaleTimeString()}`, 500);
+                } finally {
+                    running = false;
+                }
+            };
+        })();
 
         function updateDebug() {
             const nextFetchIn = Math.max(0, POLL_INTERVAL - (Date.now() - load.last) / 1000);
