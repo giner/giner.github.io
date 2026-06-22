@@ -189,11 +189,11 @@
         }
 
         function getStatusClass(status) {
-            return status === 0 ? 'ok' : status === 1 ? 'bad' : 'na';
+            return status === 0 ? 'ok' : status === -1 ? 'na' : 'bad';
         }
 
         function getStatusLabel(status) {
-            return status === 0 ? 'OK' : status === 1 ? 'BAD' : 'N/A';
+            return status === 0 ? 'OK' : status === -1 ? 'N/A' : 'BAD';
         }
 
         // === TRANSFORMATION ===
@@ -210,7 +210,7 @@
                     data[env][node] = {};
                     for (const c of components) {
                         const v = getComponentNodes(envStatus, c)[node];
-                        data[env][node][c] = (v === 0 || v === 1) ? v : -1;
+                        data[env][node][c] = Number.isFinite(v) ? v : -1;
                     }
                 }
             }
