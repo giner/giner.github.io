@@ -361,13 +361,6 @@
                         await Promise.all(Object.entries(selectedSvStatusUrls).map(fetchEnv))
                     );
 
-                    // Retry fetching stale environments immediately, this forces
-                    // mobile browsers to revalidate the cache immediately on reopening
-                    // the browser
-                    await Promise.all(Object.entries(sourceData)
-                        .filter(([env]) => isEnvFetched(sourceData, env) && isEnvStale(sourceData, env))
-                        .map(([env]) => fetchEnv([env, selectedSvStatusUrls[env]]).then(([, newData]) => Object.assign(sourceData[env], newData))));
-
                     if (myId !== loadId) return; // stale — a newer load started
                     if (selectedSv !== svAtStart) return; // prevent stale render after SV switch
 
@@ -426,7 +419,7 @@
         }
 
         init();
-        setInterval(() => Date.now() - load.last > POLL_INTERVAL * 1000 && load(), 1000);
+        setInterval(() => Date.now() - load.last > POLL_INTERVAL * 1000 && navigator.onLine && load(), 1000);
 
         if (debug) {
             document.getElementById('debug').style.display = 'block';
